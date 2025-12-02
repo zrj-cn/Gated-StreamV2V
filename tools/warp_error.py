@@ -1,9 +1,9 @@
 import os
+import argparse
 import cv2
 import json
 import numpy as np
 import csv
-import torch
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from torchvision.io import read_video
@@ -14,7 +14,7 @@ import torchvision.transforms as T
 
 plt.rcParams["savefig.bbox"] = "tight"
 # sphinx_gallery_thumbnail_number = 2
-
+method_version = 'ori-eval'
 
 def plot(imgs, **imshow_kwargs):
     if not isinstance(imgs[0], list):
@@ -145,9 +145,9 @@ def calculate_warp_error_video(model, ref_video_path, edit_video_path):
     for i in range(num_frames - 1):
         fwd_batch = torch.stack([ref_frames[i], ref_frames[i+1]])
         bwd_batch = torch.stack([ref_frames[i+1], ref_frames[i]])
-        fwd_batch = preprocess(fwd_batch).to("cuda")
-        bwd_batch = preprocess(bwd_batch).to("cuda")
-        list_of_flows = model(fwd_batch.to("cuda"), bwd_batch.to("cuda"))
+        fwd_batch = preprocess(fwd_batch).to(device)
+        bwd_batch = preprocess(bwd_batch).to(device)
+        list_of_flows = model(fwd_batch.to(device), bwd_batch.to(device))
         predicted_flows = list_of_flows[-1]
         h, w = predicted_flows.shape[2:]
         fwd_occ, bwd_occ = forward_backward_consistency_check(predicted_flows[:1], predicted_flows[1:])  # [1, H, W] float
@@ -169,19 +169,43 @@ def calculate_warp_error_video(model, ref_video_path, edit_video_path):
     return avg_error
 
 
-if __name__ == "__main__":
+def parse_args():
+    parser = argparse.ArgumentParser(description='Calculate warp error for video evaluation')
+    parser.add_argument('--cuda_visible_devices', type=str, default='7', help='CUDA visible devices.')
+    parser.add_argument('--device', type=str, default='cuda', help='Device to use (cuda or cpu)')
+    parser.add_argument('--method_version', type=str, default='motion_strength_2', help='Method version to evaluate')
+    parser.add_argument('--set_file_path', type=str, default='user_study_upload/eval_motion.json', help='Path to the JSON file containing evaluation data')
+    return parser.parse_args()
 
-    model = raft_large(pretrained=True, progress=False).to("cuda")
+if __name__ == "__main__":
+    args = parse_args()
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_visible_devices
+
+    import torch
+    
+    # 使用命令行参数
+    device = args.device
+    method_version = args.method_version
+    set_file_path = args.set_file_path
+    # raft_path = "/share/zrj/streamv2v/checkpoints/raft_large_C_T_SKHT_V2-ff5fadd5.pth"
+    # model = raft_large(weights=raft_path, progress=False).to("cuda")
+
+    local_weights_path = "/share/zrj/streamv2v/checkpoints/raft_large_C_T_SKHT_V2-ff5fadd5.pth"
+    # 初始化模型 → 加载权重 → 移到指定设备
+    model = raft_large(weights=None, progress=False)
+    state_dict = torch.load(local_weights_path, map_location="cpu")
+    model.load_state_dict(state_dict, strict=False)
+    model = model.to(device)
+
     model = model.eval()
 
-    file_path = 'user_study_upload/eval.json'  # Path to your JSON file
-    with open(file_path, 'r') as file:
+    # 使用命令行参数指定的文件路径
+    with open(set_file_path, 'r') as file:
         json_data = json.load(file)
 
-    method_name = 'StreamV2V'
     # method_name = 'tokenflow'
-    ref_video_dir = "user_study_upload/source_video"
-    edit_video_dir = f"user_study_upload/{method_name}"
+    ref_video_dir = "source_video"
+    edit_video_dir = f"output/{method_version}"
 
     video_error = []
     out_json = {}
@@ -197,6 +221,10 @@ if __name__ == "__main__":
             print()
         except:
             print("pass")
-    json.dump(out_json, open(f"{method_name}.warperror", "w"), sort_keys=True, indent=4)
-    print(f"Avg warp error of {method_name} is {sum(video_error)/len(video_error)}")
+    # 将json文件放在./warp_error_log目录下
+    json.dump(out_json, open(f"warp_error_log/{method_version}.warperror", "w"), sort_keys=True, indent=4)
+    print(f"Avg warp error of {method_version} is {sum(video_error)/len(video_error)}") 
+    # 同时将平均误差写入json文件
+    out_json['avg_error'] = sum(video_error)/len(video_error)
+    json.dump(out_json, open(f"warp_error_log/{method_version}.warperror", "w"), sort_keys=True, indent=4)
 

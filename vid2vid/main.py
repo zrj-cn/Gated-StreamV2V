@@ -2,24 +2,23 @@ import os
 import sys
 import time
 from typing import Literal, Dict, Optional
-
+import cv2
 import fire
-import torch
-from torchvision.io import read_video, write_video
-from tqdm import tqdm
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-from utils.wrapper import StreamV2VWrapper
-
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
 
 
 def main(
     input: str,
     prompt: str,
-    output_dir: str = os.path.join(CURRENT_DIR, "outputs"),
-    model_id: str = "Jiali/stable-diffusion-1.5",
+    cuda_visible_devices: str = "7",
+    video_name: str = None,
+    output_dir: str = os.path.join(CURRENT_DIR, "tests/vid"),
+    model_id: str = "/share/zrj/streamv2v/checkpoints/stable-diffusion-1.5",
     scale: float = 1.0,
     guidance_scale: float = 1.0,
     diffusion_steps: int = 4,
@@ -27,6 +26,7 @@ def main(
     acceleration: Literal["none", "xformers", "tensorrt"] = "xformers",
     use_denoising_batch: bool = True,
     use_cached_attn: bool = True,
+    use_ttt_cache: bool = False,
     use_feature_injection: bool = True,
     feature_injection_strength: float = 0.8,
     feature_similarity_threshold: float = 0.98,
@@ -35,9 +35,54 @@ def main(
     use_tome_cache: bool = True,
     do_add_noise: bool = True,
     enable_similar_image_filter: bool = False,
+    # TODO 动态调整参数
+    enable_dynamic_motion_adjust: bool = False,
+    use_random_cache_interval: bool = False,
+    save_attn_map: bool = False,
     seed: int = 2,
+    reverse_tag: bool = False,
+    vis: bool = False,
+    use_attn_concat: bool = True,
+    ttt_lr: float = 0.5,
 ):
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(cuda_visible_devices)
+    # 输出cuda可见设备
+    print(f"cuda可见设备CUDA_VISIBLE_DEVICES: {os.environ['CUDA_VISIBLE_DEVICES']}")
+    import torch
+    from torchvision.io import read_video, write_video
+    from tqdm import tqdm
+    from utils.wrapper import StreamV2VWrapper
 
+    def write_video_opencv(output_path, frames, fps=30):
+        """
+        用 OpenCV 写入视频（替代 torchvision 的 write_video）
+        frames: 视频帧列表，形状为 (num_frames, height, width, 3)，数据类型为 np.uint8（0-255）
+        """
+        if len(frames) == 0:
+            raise ValueError("无视频帧可写入")
+        
+        # 获取视频帧的高度、宽度（确保是 HWC 格式）
+        height, width = frames[0].shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # 编码格式（兼容大多数播放器）
+        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        
+        for frame in frames:
+            # 处理 torch.Tensor 类型的帧
+            if isinstance(frame, torch.Tensor):
+                frame = frame.cpu().numpy()  # 移到 CPU（此时是 HWC 格式，RGB 通道）
+                # 若帧是 [0,1] 浮点数，转 [0,255] 整数（如果已经是 uint8 可以跳过）
+                if frame.dtype in (np.float32, np.float64):
+                    frame = (frame * 255).astype(np.uint8)
+            
+            # 关键：强制将 RGB 转为 BGR（OpenCV 要求）
+            if frame.shape[-1] == 3:  # 确保是 3 通道彩色图
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            
+            # 写入视频（此时帧是 BGR 顺序，符合 OpenCV 要求）
+            out.write(frame)
+        
+        out.release()
+        print(f"视频已保存到：{output_path}")
     """
     Perform video-to-video translation with StreamV2V.
 
@@ -51,7 +96,7 @@ def main(
         The directory of the output video.
     model_id: str, optional
         The base image diffusion model. 
-        By default, it is SD 1.5 ("runwayml/stable-diffusion-v1-5").
+        By default, it is SD 1.5 ("/share/zrj/streamv2v/checkpoints/stable-diffusion-1.5").
     scale: float, optional
         The scale of the resolution, by default 1.0.
     guidance_scale: float, optional
@@ -63,6 +108,7 @@ def main(
     noise_strength: float, optional
         Our editing method is SDEdit. Higher the noise_strength means more noise is added to the starting frames.
         Highter strength ususally leads to better edit effects but may sacrifice the consistency.
+        [0,1]
         By default, it is 0.4.
     acceleration: Literal["none", "xformers", "tensorrt"] = "xformers"
         The type of acceleration to use for video translation. 
@@ -100,16 +146,29 @@ def main(
     """
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
+
+    if enable_dynamic_motion_adjust == True:
+        use_random_cache_interval = False
+
+    if use_random_cache_interval:
+        print("使用随机缓存间隔-Use random cache interval")
+    else:
+        print("不使用随机缓存间隔-Do not use random cache interval")
+
     video_info = read_video(input)
     video = video_info[0] / 255
     fps = video_info[2]["video_fps"]
     height = int(video.shape[1] * scale)
     width = int(video.shape[2] * scale)
 
+    # 去噪的初始步数
     init_step = int(50 * (1 - noise_strength))
+    # 每个 diffusion_steps 对应的去噪步长
     interval = int(50 * noise_strength) // diffusion_steps
+    # 去噪的时间索引列表
     t_index_list = [init_step + i * interval for i in range(diffusion_steps)]
 
+    print(f"bank的更新间隔cache_interval: {cache_interval}")
 
     stream = StreamV2VWrapper(
         model_id_or_path=model_id,
@@ -126,13 +185,20 @@ def main(
         similar_image_filter_threshold=0.98,
         use_denoising_batch=use_denoising_batch,
         use_cached_attn=use_cached_attn,
+        use_ttt_cache=use_ttt_cache,
         use_feature_injection=use_feature_injection,
         feature_injection_strength=feature_injection_strength,
         feature_similarity_threshold=feature_similarity_threshold,
         cache_interval=cache_interval,
         cache_maxframes=cache_maxframes,
         use_tome_cache=use_tome_cache,
+        use_random_cache_interval=use_random_cache_interval,
+        save_attn_map=save_attn_map,
         seed=seed,
+        reverse_tag=reverse_tag,
+        vis=vis,
+        use_attn_concat=use_attn_concat,
+        ttt_lr=ttt_lr,
     )
     stream.prepare(
         prompt=prompt,
@@ -183,8 +249,12 @@ def main(
     video_result = video_result * 255
     prompt_txt = prompt.replace(' ', '-')
     input_vid = input.split('/')[-1]
-    output = os.path.join(output_dir, f"{input_vid.rsplit('.', 1)[0]}_{prompt_txt}.{input_vid.rsplit('.', 1)[1]}")
-    write_video(output, video_result, fps=fps)
+    if video_name == None:
+        output = os.path.join(output_dir, f"{input_vid.rsplit('.', 1)[0]}_{prompt_txt}.{input_vid.rsplit('.', 1)[1]}")
+    # write_video(output, video_result, fps=fps)
+    else:
+        output = os.path.join(output_dir, f"{video_name}.mp4")
+    write_video_opencv(output, [frame.numpy().astype("uint8") for frame in video_result], fps=float(fps))
 
 
 if __name__ == "__main__":

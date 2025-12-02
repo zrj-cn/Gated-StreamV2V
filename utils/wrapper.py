@@ -9,10 +9,12 @@ import torch
 from diffusers import AutoencoderTiny, StableDiffusionPipeline, StableDiffusionXLPipeline
 from diffusers.models.attention_processor import XFormersAttnProcessor, AttnProcessor2_0
 from PIL import Image
+import logging
+import random
 
-from streamv2v import StreamV2V
-from streamv2v.image_utils import postprocess_image
-from streamv2v.models.attention_processor import CachedSTXFormersAttnProcessor, CachedSTAttnProcessor2_0
+from src.streamv2v import StreamV2V
+from src.streamv2v.image_utils import postprocess_image
+from src.streamv2v.models.attention_processor import CachedSTXFormersAttnProcessor, CachedSTAttnProcessor2_0, TTTCachedSTXFormersAttnProcessor
 
 
 torch.set_grad_enabled(False)
@@ -23,7 +25,7 @@ torch.backends.cudnn.allow_tf32 = True
 class StreamV2VWrapper:
     def __init__(
         self,
-        model_id_or_path: str,
+        model_id_or_path: str,  
         t_index_list: List[int],
         lora_dict: Optional[Dict[str, float]] = None,
         output_type: Literal["pil", "pt", "np", "latent"] = "pil",
@@ -35,7 +37,7 @@ class StreamV2VWrapper:
         frame_buffer_size: int = 1,
         width: int = 512,
         height: int = 512,
-        warmup: int = 10,
+        warmup: int = 10, # 预热次数，需要了解其作用
         acceleration: Literal["none", "xformers", "tensorrt"] = "xformers",
         do_add_noise: bool = True,
         device_ids: Optional[List[int]] = None,
@@ -47,18 +49,25 @@ class StreamV2VWrapper:
         use_denoising_batch: bool = True,
         cfg_type: Literal["none", "full", "self", "initialize"] = "none",
         use_cached_attn: bool = True,
+        use_ttt_cache: bool = False,
         use_feature_injection: bool = True,
         feature_injection_strength: float = 0.8,
         feature_similarity_threshold: float = 0.98,
         cache_interval: int = 4,
         cache_maxframes: int = 1, 
         use_tome_cache: bool = True,
+        use_random_cache_interval: bool = False,
         tome_metric: str = "keys",
         tome_ratio: float = 0.5,
         use_grid: bool = False,
         seed: int = 2,
         use_safety_checker: bool = False,
         engine_dir: Optional[Union[str, Path]] = "engines",
+        save_attn_map: bool = False,
+        reverse_tag: bool = False,
+        vis: bool = False,
+        use_attn_concat: bool = True,
+        ttt_lr: float = 0.5,
     ):
         """
         Initializes the StreamV2VWrapper.
@@ -144,7 +153,7 @@ class StreamV2VWrapper:
         # TODO: Test SD turbo
         self.sd_turbo = "turbo" in model_id_or_path
         self.sd_xl = "xl" in model_id_or_path
-
+        
         if mode == "txt2img":
             if cfg_type != "none":
                 raise ValueError(
@@ -176,6 +185,7 @@ class StreamV2VWrapper:
 
         self.use_denoising_batch = use_denoising_batch
         self.use_cached_attn = use_cached_attn
+        self.use_ttt_cache = use_ttt_cache
         self.use_feature_injection = use_feature_injection
         self.feature_injection_strength = feature_injection_strength
         self.feature_similarity_threshold = feature_similarity_threshold
@@ -186,6 +196,14 @@ class StreamV2VWrapper:
         self.tome_ratio = tome_ratio
         self.use_grid = use_grid
         self.use_safety_checker = use_safety_checker
+        self.use_random_cache_interval = use_random_cache_interval
+        self.save_attn_map = save_attn_map
+
+        if self.use_ttt_cache:
+            self.use_cached_attn = False
+            print("使用TTT缓存注意力")
+        else:
+            print("不使用TTT缓存注意力")
 
         self.stream: StreamV2V = self._load_model(
             model_id_or_path=model_id_or_path,
@@ -203,6 +221,7 @@ class StreamV2VWrapper:
             engine_dir=engine_dir,
         )
 
+        # 数据并行
         if device_ids is not None:
             self.stream.unet = torch.nn.DataParallel(
                 self.stream.unet, device_ids=device_ids
@@ -322,9 +341,11 @@ class StreamV2VWrapper:
             self.stream.update_prompt(prompt)
 
         if isinstance(image, str) or isinstance(image, Image.Image):
+            # 将图像处理为tensor
             image = self.preprocess_image(image)
-
+        # 进行img2img的推理
         image_tensor = self.stream(image)
+
         image = self.postprocess_image(image_tensor, output_type=self.output_type)
 
         if self.use_safety_checker:
@@ -438,8 +459,7 @@ class StreamV2VWrapper:
             Whether to use TinyVAE or not, by default True.
         cfg_type : Literal["none", "full", "self", "initialize"],
         optional
-            The cfg_type for img2img mode, by default "        seed : int, optional
-".
+            The cfg_type for img2img mode, by default "self".
         seed : int, optional
             The seed, by default 2.
 
@@ -492,7 +512,7 @@ class StreamV2VWrapper:
                         adapter_name="lcm")
                 else:
                     stream.load_lcm_lora(
-                        pretrained_model_name_or_path_or_dict="latent-consistency/lcm-lora-sdv1-5",
+                        pretrained_model_name_or_path_or_dict="/share/zrj/streamv2v/checkpoints/lcm-lora-sdv1-5",
                         adapter_name="lcm"
                         )
 
@@ -509,6 +529,10 @@ class StreamV2VWrapper:
                 stream.vae = AutoencoderTiny.from_pretrained("madebyollin/taesd").to(
                     device=pipe.device, dtype=pipe.dtype
                 )
+        
+        if self.use_random_cache_interval:
+            # 创建一个空列表来存储所有可能的缓存间隔
+            cache_interval_list = []
 
         try:
             if acceleration == "xformers":
@@ -519,6 +543,11 @@ class StreamV2VWrapper:
                     for key, attn_processor in attn_processors.items():
                         assert isinstance(attn_processor, XFormersAttnProcessor), \
                               "We only replace 'XFormersAttnProcessor' to 'CachedSTXFormersAttnProcessor'"
+
+                        if self.use_random_cache_interval:
+                            self.cache_interval = random.randint(1, 8)
+                            cache_interval_list.append(self.cache_interval)
+                        
                         new_attn_processors[key] = CachedSTXFormersAttnProcessor(name=key,
                                                                                  use_feature_injection=self.use_feature_injection,
                                                                                  feature_injection_strength=self.feature_injection_strength,
@@ -528,9 +557,28 @@ class StreamV2VWrapper:
                                                                                  use_tome_cache=self.use_tome_cache,
                                                                                  tome_metric=self.tome_metric,
                                                                                  tome_ratio=self.tome_ratio,
-                                                                                 use_grid=self.use_grid)
+                                                                                 use_grid=self.use_grid,
+                                                                                 save_attn_map=self.save_attn_map)
                     stream.pipe.unet.set_attn_processor(new_attn_processors)
-
+                if self.use_ttt_cache:
+                    # TODO 初始化TTT缓存注意力
+                    print("use_ttt_cache:", self.use_ttt_cache)
+                    attn_processors = stream.pipe.unet.attn_processors
+                    new_attn_processors = {}
+                    for key, attn_processor in attn_processors.items():
+                        assert isinstance(attn_processor, XFormersAttnProcessor), \
+                              "We only replace 'XFormersAttnProcessor' to 'TTTCachedSTXFormersAttnProcessor'"
+                        new_attn_processors[key] = TTTCachedSTXFormersAttnProcessor(name=key,
+                                                                                 use_feature_injection=self.use_feature_injection,
+                                                                                 feature_similarity_threshold=self.feature_similarity_threshold,
+                                                                                 interval=self.cache_interval, 
+                                                                                 save_attn_map=self.save_attn_map,
+                                                                                 reverse_tag=self.reverse_tag,
+                                                                                 vis=self.vis,
+                                                                                 use_concat=self.use_attn_concat,
+                                                                                 ttt_lr=self.ttt_lr,
+                                                                                 )
+                    stream.pipe.unet.set_attn_processor(new_attn_processors)
             if acceleration == "tensorrt":
                 if self.use_cached_attn:
                     raise NotImplementedError("TensorRT seems not support the costom attention_processor")
@@ -700,16 +748,20 @@ class StreamV2VWrapper:
             traceback.print_exc()
             print("Acceleration has failed. Falling back to normal mode.")
 
+        if self.use_random_cache_interval:
+            # 输出缓存间隔的列表
+            print(f"缓存间隔列表/Cache interval list: {cache_interval_list}")
+
         if seed < 0: # Random seed
             seed = np.random.randint(0, 1000000)
 
         stream.prepare(
             "",
             "",
+            # TODO:去噪步数的消融研究
             num_inference_steps=50,
-            guidance_scale=1.2
-            if stream.cfg_type in ["full", "self", "initialize"]
-            else 1.0,
+            # TODO:guidance_scale的消融研究，是否增加prompt遵循能力
+            guidance_scale=1.2 if stream.cfg_type in ["full", "self", "initialize"] else 1.0,
             generator=torch.manual_seed(seed),
             seed=seed,
         )

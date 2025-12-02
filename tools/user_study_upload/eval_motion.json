@@ -1,0 +1,57 @@
+[
+  {
+    "src_vid_name": "mallard-water",
+    "vid_name": "mallard-water_chineseink_1",
+    "prompt": "A Chinese ink painting of a duck swimming in a pond with some trees"
+  },
+  {
+    "src_vid_name": "guitar-violin",
+    "vid_name": "guitar-violin_chineseink_0",
+    "prompt": "A Chinese ink painting of two men playing violin and guitar in a room"
+  },
+  {
+    "src_vid_name": "mallard-water",
+    "vid_name": "mallard-water_edit_0canny",
+    "prompt": "A flamingo swimming in a pond with some trees."
+  },
+  {
+    "src_vid_name": "mallard-water",
+    "vid_name": "mallard-water_edit_1canny",
+    "prompt": "A swan swimming in a pond with some trees."
+  },
+  {
+    "src_vid_name": "mallard-water",
+    "vid_name": "mallard-water_impressionist_0",
+    "prompt": "An impressionist painting of a duck swimming in a pond with some trees"
+  },
+  {
+    "src_vid_name": "guitar-violin",
+    "vid_name": "guitar-violin_impressionist_1",
+    "prompt": "An impressionist painting of two men playing violin and guitar in a room"
+  },
+  {
+    "src_vid_name": "guitar-violin",
+    "vid_name": "guitar-violin_pixelart_1",
+    "prompt": "A pixel art of two men playing violin and guitar in a room"
+  },
+  {
+    "src_vid_name": "guitar-violin",
+    "vid_name": "guitar-violin_sketch_1",
+    "prompt": "A pencil sketch of two men playing violin and guitar in a room"
+  },
+  {
+    "src_vid_name": "tennis",
+    "vid_name": "tennis_ukiyoe_0",
+    "prompt": "Ukiyo-e Art - a man holding a tennis racket on a tennis court"
+  },
+  {
+    "src_vid_name": "tennis-vest",
+    "vid_name": "tennis-vest_ukiyoe_0",
+    "prompt": "Ukiyo-e Art - a man holding a tennis racket on a tennis court"
+  },
+  {
+    "src_vid_name": "guitar-violin",
+    "vid_name": "guitar-violin_ukiyoe_0",
+    "prompt": "Ukiyo-e Art - two men playing violin and guitar in a room"
+  }
+]

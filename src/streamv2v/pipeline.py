@@ -333,11 +333,12 @@ class StreamV2V:
             return_dict=False,
         )[0]
 
+        # CFG的实现
         if self.guidance_scale > 1.0 and (self.cfg_type == "initialize"):
             noise_pred_text = model_pred[1:]
             self.stock_noise = torch.concat(
                 [model_pred[0:1], self.stock_noise[1:]], dim=0
-            )  # ここコメントアウトでself out cfg
+            )  
         elif self.guidance_scale > 1.0 and (self.cfg_type == "full"):
             noise_pred_uncond, noise_pred_text = model_pred.chunk(2)
         else:
@@ -474,6 +475,7 @@ class StreamV2V:
             if self.similar_image_filter:
                 x = self.similar_filter(x)
                 if x is None:
+                    # 为什么要sleep？ 回答：保持流式视频输出的稳定性
                     time.sleep(self.inference_time_ema)
                     return self.prev_image_result
             x_t_latent = self.encode_image(x)

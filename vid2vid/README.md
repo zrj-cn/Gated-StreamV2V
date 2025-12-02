@@ -38,14 +38,20 @@ gdown https://drive.google.com/drive/folders/1D7g-dnCQnjjogTPX-B3fttgdrp9nKeKw -
 
 ```bash
 # Evaluate a single video
-python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "Elon Musk is giving a talk."
+python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "Elon Musk is giving a talk"
 python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "Claymation, a man is giving a talk."
+python main.py --input ./demo_selfie/tennis.mp4 --prompt "Ukiyo-e Art - a man holding a tennis racket on a tennis court" --use_ttt_cache True --cache_interval 1 --use_feature_injection False --save_attn_map True
+python main.py --input ./demo_selfie/tennis.mp4 --prompt "Ukiyo-e Art - a man holding a tennis racket on a tennis court" --cache_interval 1 --use_ttt_cache True --use_feature_injection True --feature_similarity_threshold 0.9
+python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "Elon Musk is giving a talk" --use_ttt_cache True --cache_interval 1 --use_feature_injection False 
+python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "Elon Musk is giving a talk" --cache_interval 1 --use_ttt_cache True --use_feature_injection True --feature_similarity_threshold 0.5
 ```
 
 ```bash
 # Evaluate a batch of videos
 python batch_eval.py --json_file ./demo_selfie/eval_jeff_celebrity.json # Face swap edits
 python batch_eval.py --json_file ./demo_selfie/eval_jeff_lorastyle.json # Stylization edits
+python batch_eval.py --json_file ./source_video/eval.json
+python batch_eval.py --json_file ./source_video/eval_motion.json
 ```
 
 CAUTION: The `--acceleration tensorrt` option is NOT SUPPORTED! I did try to accelerate the model with TensorRT, but due to the dynamic nature of the feature bank, I didn't succeed. If you are an expert on this, please contact me (jeffliang@utexas.edu) and we could discuss how to include you as a contributor. 
