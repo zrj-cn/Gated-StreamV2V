@@ -198,6 +198,11 @@ class StreamV2VWrapper:
         self.use_safety_checker = use_safety_checker
         self.use_random_cache_interval = use_random_cache_interval
         self.save_attn_map = save_attn_map
+        self.reverse_tag = reverse_tag
+        self.ttt_lr = ttt_lr
+        self.vis = vis
+        self.use_attn_concat = use_attn_concat
+
 
         if self.use_ttt_cache:
             self.use_cached_attn = False

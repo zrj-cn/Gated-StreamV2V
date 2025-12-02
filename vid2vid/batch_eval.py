@@ -14,9 +14,9 @@ def parse_arguments():
     parser.add_argument('--use_ttt_cache', type=str, default="False", help='Whether to use TTT cache.')
     parser.add_argument('--reverse_tag', type=str, default="False", help='Whether to use reverse tag.')
     parser.add_argument('--use_attn_concat', type=str, default="False", help='Whether to use attn concat.')
-    parser.add_argument('--use_feature_injection', type=str, default="False", help='Whether to use feature injection.')
+    parser.add_argument('--use_feature_injection', type=str, default="True", help='Whether to use feature injection.')
     parser.add_argument('--feature_similarity_threshold', type=float, default=0.98, help='Feature similarity threshold.')
-    parser.add_argument('--feature_injection_lr', type=float, default=0.5, help='Feature injection learning rate.')
+    parser.add_argument('--feature_injection_strength', type=float, default=0.5, help='Feature injection strength.')
     parser.add_argument('--ttt_lr', type=float, default=0.5, help='TTT learning rate.')
 
     return parser.parse_args()
@@ -58,9 +58,9 @@ for item in data:
     if video_name is not None:
         out_put_video = f"{args.output_dir}/{video_name}.mp4"
         # 如果存在这个video，则跳过
-        if os.path.exists(out_put_video):
-            print(f"视频已存在：{out_put_video}")
-            continue
+        # if os.path.exists(out_put_video):
+        #     print(f"视频已存在：{out_put_video}")
+        #     continue
         command = [
             'python', "main.py",
             "--input", f"{file_path}/{src_vid_name}.mp4",
@@ -73,13 +73,19 @@ for item in data:
             "--noise_strength", noise_strength,
             "--acceleration", "xformers",
             "--use_cached_attn",
-            "--use_feature_injection",
             "--cache_maxframes", "1",
             "--use_tome_cache",
             "--do_add_noise", 
             "--guidance_scale", "1.0" ,
             "--cache_interval", str(args.cache_interval),
             "--use_random_cache_interval", args.random_cache_interval,
+            "--use_attn_concat", args.use_attn_concat,
+            "--use_feature_injection", args.use_feature_injection,
+            "--feature_similarity_threshold", str(args.feature_similarity_threshold),
+            "--feature_injection_strength", str(args.feature_injection_strength),
+            "--ttt_lr", str(args.ttt_lr),
+            "--use_ttt_cache", args.use_ttt_cache,
+            "--reverse_tag", args.reverse_tag,
         ]
     else:
         command = [

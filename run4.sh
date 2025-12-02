@@ -14,7 +14,7 @@ use_attn_concat="True" # 自注意力机制是否连接 default: false
 # 特征注入相关设置
 use_feature_injection="True" # default: false
 feature_similarity_threshold=0.98 # 特征相似度阈值，default: 0.98
-feature_injection_lr=0.5 # 特征注入时的学习率，default: 0.5 TTT模式下不起效
+feature_injection_strength=0.5 # 特征注入时的强度，default: 0.5 TTT模式下不起效
 
 # 其他信息
 cache_interval="1"
@@ -39,7 +39,7 @@ python ./batch_eval.py \
     --use_attn_concat $use_attn_concat \
     --use_feature_injection $use_feature_injection \
     --feature_similarity_threshold $feature_similarity_threshold \
-    --feature_injection_lr $feature_injection_lr \
+    --feature_injection_strength $feature_injection_strength \
     --ttt_lr $ttt_lr
 cd ..
 
