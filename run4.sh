@@ -7,7 +7,7 @@ output_dir_name="ttt_default"
 
 # TTT缓存相关设置
 use_ttt_cache="True" # default: false
-reverse_tag="Flase" # default: false
+reverse_tag="False" # default: false
 ttt_lr=0.5 # 更新cache时的学习率，default: 0.5
 use_attn_concat="True" # 自注意力机制是否连接 default: false
 

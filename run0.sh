@@ -3,12 +3,12 @@
 # 输入的序列
 input_json_file_name="eval.json"
 
-output_dir_name="ttt_lr_0.8"
+output_dir_name="ttt_lr_0.9"
 
 # TTT缓存相关设置
 use_ttt_cache="True" # default: false
 reverse_tag="False" # default: false
-ttt_lr=0.8 # 更新cache时的学习率，default: 0.5
+ttt_lr=0.9 # 更新cache时的学习率，default: 0.5
 use_attn_concat="True" # 自注意力机制是否连接 default: false
 
 # 特征注入相关设置
@@ -24,7 +24,7 @@ random_cache_interval="False" # 仅针对原本的模式
 
 # 可见cuda设备
 device="cuda"
-cuda_visible_devices="7"
+cuda_visible_devices="0"
 
 cd vid2vid
 python ./batch_eval.py \

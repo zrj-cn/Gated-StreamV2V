@@ -58,9 +58,9 @@ for item in data:
     if video_name is not None:
         out_put_video = f"{args.output_dir}/{video_name}.mp4"
         # 如果存在这个video，则跳过
-        # if os.path.exists(out_put_video):
-        #     print(f"视频已存在：{out_put_video}")
-        #     continue
+        if os.path.exists(out_put_video):
+            print(f"视频已存在：{out_put_video}")
+            continue
         command = [
             'python', "main.py",
             "--input", f"{file_path}/{src_vid_name}.mp4",
