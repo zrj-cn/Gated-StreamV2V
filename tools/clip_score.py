@@ -50,9 +50,9 @@ if __name__ == "__main__":
     video_names = list(video_maps.keys())
 
     # TODO 可能需要提前下载或者利用hf-mirror
-    model = CLIPModel.from_pretrained("/share/zrj/streamv2v/checkpoints/clip-vit-base-patch32")
+    model = CLIPModel.from_pretrained("/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/clip-vit-base-patch32")
     model = model.to(device)
-    processor = CLIPProcessor.from_pretrained("/share/zrj/streamv2v/checkpoints/clip-vit-base-patch32")
+    processor = CLIPProcessor.from_pretrained("/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/clip-vit-base-patch32")
 
     cos = torch.nn.CosineSimilarity(dim=1, eps=1e-6)
 

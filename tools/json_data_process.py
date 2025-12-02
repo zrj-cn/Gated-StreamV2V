@@ -6,7 +6,7 @@ OUTPUT_JSON_PATH = "/home/zrj/project/ori_v2v/streamv2v/vid2vid/source_video/eva
 FILE_PATH = "./source_video"         # 固定的 file_path 值
 DIFFUSION_STEPS = "4"                # 固定的 diffusion_steps 值
 NOISE_STRENGTH = "0.4"               # 固定的 noise_strength 值
-MODEL_ID = "/share/zrj/streamv2v/checkpoints/stable-diffusion-1.5"  # 固定 model_id
+MODEL_ID = "/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/stable-diffusion-1.5"  # 固定 model_id
 # --------------------------------------------------------------------------------
 
 def convert_json():

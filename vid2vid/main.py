@@ -18,7 +18,7 @@ def main(
     cuda_visible_devices: str = "7",
     video_name: str = None,
     output_dir: str = os.path.join(CURRENT_DIR, "tests/vid"),
-    model_id: str = "/share/zrj/streamv2v/checkpoints/stable-diffusion-1.5",
+    model_id: str = "/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/stable-diffusion-1.5",
     scale: float = 1.0,
     guidance_scale: float = 1.0,
     diffusion_steps: int = 4,
@@ -96,7 +96,7 @@ def main(
         The directory of the output video.
     model_id: str, optional
         The base image diffusion model. 
-        By default, it is SD 1.5 ("/share/zrj/streamv2v/checkpoints/stable-diffusion-1.5").
+        By default, it is SD 1.5 ("/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/stable-diffusion-1.5").
     scale: float, optional
         The scale of the resolution, by default 1.0.
     guidance_scale: float, optional

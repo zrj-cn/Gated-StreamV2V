@@ -22,7 +22,7 @@ class VideoMotionAnalyzer:
         """
         self.device = device
         # 加载预训练的RAFT光流模型
-        local_weights_path = "/share/zrj/streamv2v/checkpoints/raft_large_C_T_SKHT_V2-ff5fadd5.pth"
+        local_weights_path = "/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/raft_large_C_T_SKHT_V2-ff5fadd5.pth"
         self.raft_model = raft_large(weights=None, progress=False)
         state_dict = torch.load(local_weights_path, map_location="cpu")
         self.raft_model.load_state_dict(state_dict, strict=False)

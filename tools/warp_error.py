@@ -187,10 +187,10 @@ if __name__ == "__main__":
     device = args.device
     method_version = args.method_version
     set_file_path = args.set_file_path
-    # raft_path = "/share/zrj/streamv2v/checkpoints/raft_large_C_T_SKHT_V2-ff5fadd5.pth"
+
     # model = raft_large(weights=raft_path, progress=False).to("cuda")
 
-    local_weights_path = "/share/zrj/streamv2v/checkpoints/raft_large_C_T_SKHT_V2-ff5fadd5.pth"
+    local_weights_path = "/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/raft_large_C_T_SKHT_V2-ff5fadd5.pth"
     # 初始化模型 → 加载权重 → 移到指定设备
     model = raft_large(weights=None, progress=False)
     state_dict = torch.load(local_weights_path, map_location="cpu")

@@ -47,7 +47,7 @@ for item in data:
         model_id = item["model_id"]
     except:
         # TODO -ZRJ-如果需要验证，请修改此处
-        model_id = "/share/zrj/streamv2v/checkpoints/stable-diffusion-1.5"
+        model_id = "/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/stable-diffusion-1.5"
         # model_id = "Jiali/stable-diffusion-1.5"
     
     try:

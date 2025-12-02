@@ -512,7 +512,7 @@ class StreamV2VWrapper:
                         adapter_name="lcm")
                 else:
                     stream.load_lcm_lora(
-                        pretrained_model_name_or_path_or_dict="/share/zrj/streamv2v/checkpoints/lcm-lora-sdv1-5",
+                        pretrained_model_name_or_path_or_dict="/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/lcm-lora-sdv1-5",
                         adapter_name="lcm"
                         )
 
