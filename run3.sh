@@ -3,16 +3,16 @@
 # 输入的序列
 input_json_file_name="eval.json"
 
-output_dir_name="ttt_lr_0.3"
+output_dir_name="ttt_default_no_FF_reverse"
 
 # TTT缓存相关设置
 use_ttt_cache="True" # default: false
-reverse_tag="False" # default: false
-ttt_lr=0.3 # 更新cache时的学习率，default: 0.5
+reverse_tag="True" # default: false
+ttt_lr=0.5 # 更新cache时的学习率，default: 0.5
 use_attn_concat="True" # 自注意力机制是否连接 default: false
 
 # 特征注入相关设置
-use_feature_injection="True" # default: false
+use_feature_injection="False" # default: false
 feature_similarity_threshold=0.98 # 特征相似度阈值，default: 0.98
 feature_injection_strength=0.5 # 特征注入时的强度，default: 0.5 TTT模式下不起效
 

@@ -11,6 +11,76 @@ import math
 # ==========================================
 # 新增：TTT3R 核心逻辑 (TTT3R Core Logic)
 # ==========================================
+def compute_ttt_beta_optimized(q_bank, k_in, scale=1.0, reverse_tag=False):
+    """
+    计算更新门控 Beta。
+    逻辑：如果 Bank 中的某个 Token 在 Current Frame (k_in) 中找到了非常相似的匹配，
+    说明这个 Token 是显著的/被激活的，我们应该更新它（或者保持它，取决于策略）。
+    
+    Args:
+        q_bank: (B, Heads, N_bank, D)
+        k_in:   (B, Heads, N_in, D)
+    """
+    dtype = q_bank.dtype
+    # 1. 计算完整的 Attention Score (不先求和)
+    # (B, Heads, N_bank, D) @ (B, Heads, D, N_in) -> (B, Heads, N_bank, N_in)
+    sim_matrix = torch.matmul(q_bank.to(torch.float32), k_in.transpose(-1, -2).to(torch.float32)) * scale
+    
+    # 2. 获取每个 Bank Token 在当前帧中的最大匹配度
+    # 含义：Bank Token i 在当前帧里找到的最相似物体的相似度是多少？
+    # shape: (B, Heads, N_bank)
+    max_sim, _ = torch.max(sim_matrix, dim=-1)
+    
+    # 3. 计算 Beta (Sigmoid 归一化)
+    # 这里的 temperature 可以控制门控的锐度，建议可调
+    beta = torch.sigmoid(max_sim) 
+    
+    # 4. 聚合 Heads (取平均) -> (B, N_bank, 1)
+    beta = torch.mean(beta, dim=1, keepdim=True).transpose(1, 2)
+    
+    if reverse_tag:
+        beta = 1.0 - beta
+        
+    return beta.to(dtype)
+
+def compute_ttt_beta_cos(feature_bank, feature_in, temperature=8.0, reverse_tag=True):
+    """
+    计算位置敏感的余弦相似度 Beta。
+    对应你的例子：
+    q_bank: (B, N, C) -> [[1,2], [0,1]]
+    k_in:   (B, N, C) -> [[1,2], [4,-3]]
+    """
+    dtype = feature_bank.dtype
+    
+    # 1. 强制 L2 归一化 (计算 Cosine Sim 的基础)
+    # q_norm: [[1/√5, 2/√5], [0, 1]]
+    # k_norm: [[1/√5, 2/√5], [4/5, -3/5]]
+    feature_bank_norm = F.normalize(feature_bank.to(torch.float32), p=2, dim=-1)
+    feature_in_norm = F.normalize(feature_in.to(torch.float32), p=2, dim=-1)
+
+    # 2. 逐位置点积 (Element-wise Dot Product)
+    # 这一步直接得到每个位置的 Cosine Similarity
+    # dim=-1 求和，保留空间维度 N
+    # sim: [1.0, -0.6]
+    sim = torch.sum(feature_bank_norm * feature_in_norm, dim=-1, keepdim=True) 
+    
+    # 3. 缩放 (Temperature)
+    # score: [4.0, -2.4]
+    score = sim * temperature
+    
+    # 4. Sigmoid
+    # sigmoid_score: [0.982, 0.083]
+    beta = torch.sigmoid(score)
+    
+    # 5. Beta 反转
+    # beta: [0.018, 0.917]
+    if reverse_tag:
+        beta = 1.0 - beta
+        # 建议加个极小值保底，防止彻底死锁
+        # beta = torch.clamp(beta, min=0.01)
+        
+    return beta.to(dtype)
+
 
 def compute_ttt_beta(q_bank, k_in, reverse_tag = False):
     # ... (获取维度信息)
@@ -23,7 +93,7 @@ def compute_ttt_beta(q_bank, k_in, reverse_tag = False):
     k_in_f32 = k_in.to(torch.float32)
     # 1. 先对 Input Key 在序列维度 (dim=2) 求和
     # k_in shape: (B, Heads, N_in, D) -> k_sum shape: (B, Heads, D)
-    k_sum = torch.sum(k_in_f32, dim=2)
+    k_sum = torch.mean(k_in_f32, dim=2)
     
     # 2. 计算 Query 与 聚合Key 的点积
     # q_bank: (B, Heads, N_bank, D)
@@ -35,9 +105,9 @@ def compute_ttt_beta(q_bank, k_in, reverse_tag = False):
     # print("match_score shape:", match_score.shape)
     # === 优化结束 ===
 
-    # 应用缩放
     match_score = match_score * scale_factor
     
+
     # 后续处理保持不变 (Mean over heads, Transpose, Sigmoid)
     match_score = torch.mean(match_score, dim=1, keepdim=True) 
     match_score = match_score.transpose(1, 2)
@@ -49,7 +119,6 @@ def compute_ttt_beta(q_bank, k_in, reverse_tag = False):
         beta = 1.0 - beta
     
     return beta.to(dtype)
-
 
 def apply_ttt_update(bank_state, update_delta, beta, lr=0.5):
     """
@@ -63,59 +132,15 @@ def apply_ttt_update(bank_state, update_delta, beta, lr=0.5):
         lr: 全局学习率
     """
     effective_lr = beta * lr
-    # print("effective_lr shape:", effective_lr.shape)
-    # print("update_delta shape:", update_delta.shape)
-    # print("bank_state shape:", bank_state.shape)
-    
+    # effective_lr < 0.2的部分, 值置为0 
+    # effective_lr[effective_lr < 0.2] = 0.0
+    # effective_lr[effective_lr > 0.3] = 0.0
     # 使用插值更新策略，防止数值爆炸，同时保留惯性
     # 如果 beta 高，更多地采纳 update_delta；如果 beta 低，保持原样
     new_state = (1 - effective_lr) * bank_state + effective_lr * update_delta
     # print("new_state shape:", new_state.shape)
     
     return new_state
-
-def soft_feature_injection2(x, bank_output, threshold=0.9, temperature=10.0):
-    """
-    改进的特征注入函数，使用软融合 (Soft Blending) 代替硬替换。
-    
-    Args:
-        x: 当前帧的特征 (B, N_x, C)
-        bank_output: Feature Bank 中存储的特征 (B, N_bank, C)
-        threshold: 相似度阈值
-        temperature: Softmax 温度
-    """
-    # 兼容 deque 输入
-    if isinstance(bank_output, deque):
-        bank_output = torch.cat(list(bank_output), dim=1)
-    
-    # print("bank_output shape:", bank_output.shape)
-    # print("x shape:", x.shape)
-
-    x_norm = F.normalize(x, p=2, dim=-1)
-    bank_norm = F.normalize(bank_output, p=2, dim=-1)
-
-    # 计算相似度 (B, N_x, N_bank) - 当前帧查询 Bank
-    similarity = torch.matmul(x_norm, bank_norm.transpose(1, 2))
-    
-    # 找到与当前特征最相似的 Bank 特征分数
-    max_sim, _ = torch.max(similarity, dim=-1, keepdim=True) # (B, N_x, 1)
-
-    # Soft Retrieval: 根据相似度加权获取 Bank 特征
-    attn = F.softmax(similarity * temperature, dim=-1)
-    retrieved_feat = torch.matmul(attn, bank_output)
-
-    # 计算软掩码 (Soft Mask)
-    # scale 控制 Sigmoid 的陡峭程度
-    scale = 20.0
-    # 当 max_sim < threshold 时 (没找到匹配)，sigmoid > 0.5，倾向于保留 x (当前生成特征)
-    # 当 max_sim > threshold 时 (找到匹配)，sigmoid < 0.5，倾向于使用 retrieved_feat (Bank 特征)
-    soft_mask = torch.sigmoid((threshold - max_sim) * scale)
-    
-    # 融合
-    out = soft_mask * x + (1 - soft_mask) * retrieved_feat
-    
-    return out
-
 
 def soft_feature_injection(x, bank_output, threshold=0.9, alpha=2.0):
     """

@@ -42,7 +42,11 @@ python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "Elon Musk is giving a 
 python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "Claymation, a man is giving a talk."
 python main.py --input ./demo_selfie/tennis.mp4 --prompt "Ukiyo-e Art - a man holding a tennis racket on a tennis court" --use_ttt_cache True --cache_interval 1 --use_feature_injection False --save_attn_map True
 python main.py --input ./demo_selfie/tennis.mp4 --prompt "Ukiyo-e Art - a man holding a tennis racket on a tennis court" --cache_interval 1 --use_ttt_cache True --use_feature_injection True --feature_similarity_threshold 0.9
-python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "Elon Musk is giving a talk" --use_ttt_cache True --cache_interval 1 --use_feature_injection False 
+
+python main.py --input ./demo_selfie/tennis.mp4 --prompt "Ukiyo-e Art - a man holding a tennis racket on a tennis court" --use_ttt_cache True --cache_interval 1 --use_feature_injection False --save_attn_map True --reverse_tag True --ttt_lr 1.0
+
+python main.py --input ./demo_selfie/tennis.mp4 --prompt "Ukiyo-e Art - a man holding a tennis racket on a tennis court" --cache_interval 1 --use_ttt_cache True --use_feature_injection True --save_attn_map True
+
 python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "Elon Musk is giving a talk" --cache_interval 1 --use_ttt_cache True --use_feature_injection True --feature_similarity_threshold 0.5
 ```
 

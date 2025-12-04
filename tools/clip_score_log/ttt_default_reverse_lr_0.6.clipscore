@@ -1,0 +1,135 @@
+{
+    "avg_score": 0.9535152397372506,
+    "breakdance-flare_impressionist_1": {
+        "An impressionist painting of a man doing a handstand on the street": 0.9276820421218872
+    },
+    "breakdance-flare_pixelart_0": {
+        "A pixel art of a man doing a handstand on the street": 0.9331640005111694
+    },
+    "breakdance_impressionist_0": {
+        "An impressionist painting of a man doing a handstand on a brick wall": 0.9341532588005066
+    },
+    "breakdance_pixelart_1": {
+        "A pixel art of a man doing a handstand on a brick wall": 0.9529128074645996
+    },
+    "dancing_impressionist_1": {
+        "An impressionist painting of a group of people dancing in the street": 0.901816189289093
+    },
+    "dancing_ukiyoe_1": {
+        "Ukiyo-e Art - a group of people dancing in the street": 0.9654155969619751
+    },
+    "dog-agility_edit_1canny": {
+        "A Corgi running through a field of poles.": 0.9484046697616577
+    },
+    "dog-agility_edit_2canny": {
+        "A Husky running through a field of poles.": 0.9468164443969727
+    },
+    "dog-agility_oilpainting_1": {
+        "An oil painting of a dog running through a field of poles": 0.9476519823074341
+    },
+    "dog-agility_pixelart_1": {
+        "A pixel art of a dog running through a field of poles": 0.9359237551689148
+    },
+    "dog-agility_ukiyoe_1": {
+        "Ukiyo-e Art - a dog running through a field of poles": 0.9395064115524292
+    },
+    "dogs-jump_edit_1canny": {
+        "A woman is standing in a field with two tigers.": 0.9271857738494873
+    },
+    "dogs-jump_edit_2canny": {
+        "A woman is standing in a field with two leopards.": 0.9289820790290833
+    },
+    "dogs-jump_edit_5canny": {
+        "A woman is standing in a field with two dogs in front of the Egyptian pyramids.": 0.947299063205719
+    },
+    "elephant_pixelart_0": {
+        "A pixel art of a large elephant standing in a dirt area": 0.970261812210083
+    },
+    "flamingo_pixelart_1": {
+        "A pixel art of a group of flamingos standing in the water": 0.9693242311477661
+    },
+    "flamingo_ukiyoe_0": {
+        "Ukiyo-e Art - a group of flamingos standing in the water": 0.9744861721992493
+    },
+    "gold-fish_chineseink_0": {
+        "A Chinese ink painting of goldfish in aquarium": 0.9800633192062378
+    },
+    "gold-fish_edit_4depth": {
+        "Goldfish in an aquarium surrounded by colorful coral reefs.": 0.9783858060836792
+    },
+    "gold-fish_oilpainting_1": {
+        "An oil painting of goldfish in aquarium": 0.979896068572998
+    },
+    "gold-fish_pixelart_1": {
+        "A pixel art of goldfish in aquarium": 0.9798042178153992
+    },
+    "gold-fish_ukiyoe_1": {
+        "Ukiyo-e Art - goldfish in aquarium": 0.9715229272842407
+    },
+    "guitar-violin_chineseink_0": {
+        "A Chinese ink painting of two men playing violin and guitar in a room": 0.9280214905738831
+    },
+    "guitar-violin_impressionist_1": {
+        "An impressionist painting of two men playing violin and guitar in a room": 0.923433780670166
+    },
+    "guitar-violin_pixelart_1": {
+        "A pixel art of two men playing violin and guitar in a room": 0.9637054204940796
+    },
+    "guitar-violin_sketch_1": {
+        "A pencil sketch of two men playing violin and guitar in a room": 0.9730198383331299
+    },
+    "guitar-violin_ukiyoe_0": {
+        "Ukiyo-e Art - two men playing violin and guitar in a room": 0.9666054844856262
+    },
+    "lindy-hop_pixelart_0": {
+        "A pixel art of a group of people dancing in a dance studio": 0.9353163838386536
+    },
+    "mallard-water_chineseink_1": {
+        "A Chinese ink painting of a duck swimming in a pond with some trees": 0.9414948225021362
+    },
+    "mallard-water_edit_0canny": {
+        "A flamingo swimming in a pond with some trees.": 0.9394368529319763
+    },
+    "mallard-water_edit_1canny": {
+        "A swan swimming in a pond with some trees.": 0.9436827301979065
+    },
+    "mallard-water_impressionist_0": {
+        "An impressionist painting of a duck swimming in a pond with some trees": 0.9484009742736816
+    },
+    "pigs_chineseink_0": {
+        "A Chinese ink painting of a group of pigs are standing on the ground": 0.9406290650367737
+    },
+    "pigs_edit_0canny": {
+        "A group of cows are standing on the ground.": 0.9302693009376526
+    },
+    "pigs_pixelart_0": {
+        "A pixel art of a group of pigs are standing on the ground": 0.9546798467636108
+    },
+    "salsa_oilpainting_1": {
+        "An oil painting of a group of people dancing on a street": 0.947184681892395
+    },
+    "salsa_ukiyoe_0": {
+        "Ukiyo-e Art - a group of people dancing on a street": 0.9681172370910645
+    },
+    "sheep_edit_0depth": {
+        "A group of cows and a baby calf in a field.": 0.9873238801956177
+    },
+    "sheep_impressionist_1": {
+        "An impressionist painting of a group of sheep and a baby lamb in a field": 0.9848707914352417
+    },
+    "sheep_pixelart_0": {
+        "A pixel art of a group of sheep and a baby lamb in a field": 0.9851768612861633
+    },
+    "soccerball_oilpainting_0": {
+        "An oil painting of a soccer ball is sitting in the grass next to a tree": 0.955464243888855
+    },
+    "soccerball_pixelart_1": {
+        "A pixel art of a soccer ball is sitting in the grass next to a tree": 0.9725669622421265
+    },
+    "tennis-vest_ukiyoe_0": {
+        "Ukiyo-e Art - a man holding a tennis racket on a tennis court": 0.9636029601097107
+    },
+    "tennis_ukiyoe_0": {
+        "Ukiyo-e Art - a man holding a tennis racket on a tennis court": 0.9610083103179932
+    }
+}

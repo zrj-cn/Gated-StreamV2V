@@ -3,7 +3,7 @@
 # 输入的序列
 input_json_file_name="eval.json"
 
-output_dir_name="ttt_default"
+output_dir_name="ttt_default_threshold_0.90"
 
 # TTT缓存相关设置
 use_ttt_cache="True" # default: false
@@ -13,7 +13,7 @@ use_attn_concat="True" # 自注意力机制是否连接 default: false
 
 # 特征注入相关设置
 use_feature_injection="True" # default: false
-feature_similarity_threshold=0.98 # 特征相似度阈值，default: 0.98
+feature_similarity_threshold=0.90 # 特征相似度阈值，default: 0.98
 feature_injection_strength=0.5 # 特征注入时的强度，default: 0.5 TTT模式下不起效
 
 # 其他信息

@@ -13,7 +13,7 @@ from diffusers.utils.import_utils import is_xformers_available
 from diffusers.utils.torch_utils import maybe_allow_in_graph
 from diffusers.models.lora import LoRACompatibleLinear, LoRALinearLayer
 
-from .utils import get_nn_feats, random_bipartite_soft_matching, soft_feature_injection, compute_ttt_beta, apply_ttt_update
+from .utils import get_nn_feats, random_bipartite_soft_matching, soft_feature_injection, compute_ttt_beta, apply_ttt_update, compute_ttt_beta_optimized, compute_ttt_beta_cos
 
 
 if is_xformers_available():
@@ -426,12 +426,13 @@ class TTTCachedSTXFormersAttnProcessor:
         TTT Update Step: S_t = S_{t-1} - beta * grad(S_{t-1}, X_t)
         这里利用 Attention(Q=Bank, K=In, V=In) 作为检索到的目标信息。
         """
-
+        beta = torch.tensor([])
+        update_delta = torch.tensor([])
         args = () if USE_PEFT_BACKEND else (scale,)
         if self.bank_state is not None:
             if self.vis:
                 print("bank is not none:", self.bank_state.shape)
-            start_time = time.time()
+            # start_time = time.time()
             # 1. 准备 Q, K, V
             # Q 来自 Bank State (Historical Memory)，作为查询去 Input 中找对应信息
             # K, V 来自 Input Frame (New Observation)
@@ -471,13 +472,21 @@ class TTTCachedSTXFormersAttnProcessor:
                 print("q_bank_reshaped shape:", q_bank_reshaped.shape)
                 print("k_in_reshaped shape:", k_in_reshaped.shape)
 
+
+            # print("q_bank_reshaped shape:", q_bank_reshaped.shape)
+            # print("k_in_reshaped shape:", k_in_reshaped.shape)
             
             beta = compute_ttt_beta(
                 q_bank_reshaped, 
                 k_in_reshaped,
                 reverse_tag=self.reverse_tag
             )
-            
+
+            # beta = compute_ttt_beta_cos(
+            #     self.bank_state, 
+            #     input_hidden_states,
+            #     reverse_tag=self.reverse_tag
+            # )
             
             # 4. 执行更新
             self.bank_state = apply_ttt_update(
@@ -492,21 +501,98 @@ class TTTCachedSTXFormersAttnProcessor:
             if self.vis:
                 print("init bank state:", input_hidden_states.shape)
             self.bank_state = input_hidden_states.clone()
+            # self.bank_state = self.bank_state[:,::4,:]
         
-        if self.save_attn_map:
+        if self.save_attn_map and self.frame_id % 4 == 0 and self.frame_id <= 48:
             key = attn.to_k(self.bank_state, *args)
             value = attn.to_v(self.bank_state, *args)
             query = attn.to_q(self.bank_state, *args)
             os.makedirs(f'./output/TTT/self_attn_bank/', exist_ok=True)
             feats = {
                         "hidden_states": self.bank_state.clone().cpu(),
-                        "key": key.clone().cpu(),
-                        "value": value.clone().cpu(),
-                        "query": query.clone().cpu(),
+                        # "key": key.clone().cpu(),
+                        # "value": value.clone().cpu(),
+                        # "query": query.clone().cpu(),
+                        "beta": beta.clone().cpu(),
+                        "update_delta": update_delta.clone().cpu(),
                     }
             torch.save(feats, f'./output/TTT/self_attn_bank/{self.name}.frame{self.frame_id}.pt')
         
+    def _ttt_update_step_opt(self, attn, input_hidden_states, cached_key, cached_value, scale=1.0):
+        if self.bank_state is None:
+            # 初始化：通常第一帧直接作为 Bank
+            self.bank_state = input_hidden_states.clone()
+            return
 
+        # === 准备数据 ===
+        # Q 来自 Bank (Old Memory)
+        q_bank = attn.to_q(self.bank_state) # 注意：Diffusers通常to_q有bias吗？检查一下，这里假设没有或不影响
+        q_bank = attn.head_to_batch_dim(q_bank) # (B*H, N, D)
+        
+        # K 来自 Current Frame (New Observation)
+        # cached_key 已经是 head_to_batch_dim 过的吗？
+        # 在你的 __call__ 里：cached_key = key.clone() -> 还没 head_to_batch_dim
+        # 所以这里需要处理维度
+        args = () 
+        
+        # 重新生成当前帧的 K (为了确保维度对齐，建议重新计算或正确reshape)
+        # 你的 cached_key 是 (B, N, C*H)，需要 reshape 成 (B, H, N, D)
+        batch_size = input_hidden_states.shape[0]
+        head_dim = q_bank.shape[-1]
+        heads = attn.heads
+        
+        # Reshape Q_bank: (B, Heads, N, D)
+        q_bank_reshaped = q_bank.view(batch_size, heads, -1, head_dim)
+        
+        # 重新计算当前帧的 K (直接用 cached_hidden_states 计算最稳妥)
+        k_in = attn.to_k(input_hidden_states)
+        k_in_reshaped = k_in.view(batch_size, heads, -1, head_dim)
+
+        # === 1. 计算自适应学习率 Beta ===
+        # 使用优化后的计算方式
+        beta = compute_ttt_beta_cos(
+            q_bank_reshaped, 
+            k_in_reshaped, 
+            scale=attn.scale,
+            reverse_tag=self.reverse_tag
+        ) # Output: (B, N, 1)
+
+        # beta = compute_ttt_beta_cos(
+        #     self.bank_state, 
+        #     input_hidden_states, 
+        #     reverse_tag=self.reverse_tag
+        # ) # Output: (B, N, 1)
+
+        # === 2. 执行更新 (Fix Space Mismatch) ===
+        # 目标：将 input_hidden_states (当前帧特征) 融合进 bank_state
+        # Update Target 是 Current Frame Features
+        update_target = input_hidden_states
+        
+        effective_lr = beta
+        
+        # Update Rule: S_new = (1 - lr) * S_old + lr * S_new
+        # 这样保证了空间一致性，因为 bank_state 和 update_target 都在 Pre-Attention 空间
+        self.bank_state = (1 - effective_lr) * self.bank_state + effective_lr * update_target
+        
+        # Debug / Vis
+        if self.vis and self.frame_id % 4 == 0:
+            print(f"Frame {self.frame_id}: Beta Mean {beta.mean().item():.4f}, Max {beta.max().item():.4f}")
+
+        if self.save_attn_map and self.frame_id % 4 == 0 and self.frame_id <= 48:
+            print(f"Frame {self.frame_id}: Beta Mean {beta.mean().item():.4f}, Max {beta.max().item():.4f},Min {beta.min().item():.4f}, Name {self.name}")
+            key = attn.to_k(self.bank_state, *args)
+            value = attn.to_v(self.bank_state, *args)
+            query = attn.to_q(self.bank_state, *args)
+            os.makedirs(f'./output/TTT/self_attn_bank/', exist_ok=True)
+            feats = {
+                        "hidden_states": self.bank_state.clone().cpu(),
+                        # "key": key.clone().cpu(),
+                        # "value": value.clone().cpu(),
+                        # "query": query.clone().cpu(),
+                        "beta": beta.clone().cpu(),
+                    }
+            torch.save(feats, f'./output/TTT/self_attn_bank/{self.name}.frame{self.frame_id}.pt')
+             
     def __call__(
         self,
         attn: Attention,
@@ -566,6 +652,9 @@ class TTTCachedSTXFormersAttnProcessor:
         key = attn.to_k(encoder_hidden_states, *args)
         value = attn.to_v(encoder_hidden_states, *args)
 
+        cached_key = key.clone()
+        cached_value = value.clone()
+
         if is_selfattn:
             if self.vis:
                 print("自注意力self-attention")
@@ -578,7 +667,9 @@ class TTTCachedSTXFormersAttnProcessor:
                 key = key
                 value = value
             else:
+                # self.bank_state = self.bank_state[:,::4,:]
                 # 对于后续帧
+                # self.bank_state = uniform_sample_sequence_dim(self.bank_state, 1574)
                 if self.use_attn_concat == True:
                     # 对于concat方案
                     key = torch.cat([key, attn.to_k(self.bank_state, *args)], dim=1)
@@ -589,14 +680,14 @@ class TTTCachedSTXFormersAttnProcessor:
                     value = attn.to_v(self.bank_state, *args)
 
             
-            if self.save_attn_map:
+            if self.save_attn_map and self.frame_id % 4 == 0:
                 # 如果需要保存self-attention特征
                 os.makedirs(f'./output/TTT/self_attn_feats_SD/', exist_ok=True)
                 feats = {
                             "hidden_states": hidden_states.clone().cpu(),
-                            "query": query.clone().cpu(),
-                            "key": key.clone().cpu(),
-                            "value": value.clone().cpu(),
+                            # "query": query.clone().cpu(),
+                            # "key": key.clone().cpu(),
+                            # "value": value.clone().cpu(),
                         }
                 torch.save(feats, f'./output/TTT/self_attn_feats_SD/{self.name}.frame{self.frame_id}.pt')
         
@@ -633,29 +724,36 @@ class TTTCachedSTXFormersAttnProcessor:
         if self.vis:
             print("hidden_states shape after residual connection:", hidden_states.shape)
             print("use_feature_injection:", self.use_feature_injection)
+
+        if is_selfattn and self.use_attn_concat == False and self.bank_state is not None:
+            print("NO use_attn_concat:", self.use_attn_concat)
+            hidden_states = hidden_states + cached_hidden_states.clone()
+
         # === 4. Feature Injection (从 Bank 注入) ===
-        if is_selfattn:
-            if self.use_feature_injection and self.bank_state is not None:
-                if "up_blocks.0" in self.name or "up_blocks.1" in self.name or 'mid_block' in self.name:
-                    b_state_reshaped = self.bank_state.clone()
-                    # 准备 Bank State 的形状以匹配 Hidden States
-                    if input_ndim == 4:
-                        b_state_reshaped = b_state_reshaped.transpose(1, 2).reshape(batch_size, channel, height, width)
-                    # else:
-                    #     b_state_reshaped = b_state_reshaped.transpose(1, 2)
-                    
-                    # 使用 Soft Injection
-                    hidden_states = soft_feature_injection(
-                        hidden_states, 
-                        b_state_reshaped, 
-                        threshold=self.threshold,
-                        # temperature=self.ttt_temperature
-                    )
+        if is_selfattn and self.use_feature_injection and self.bank_state is not None:
+            if "up_blocks.0" in self.name or "up_blocks.1" in self.name or 'mid_block' in self.name:
+                b_state_reshaped = self.bank_state.clone()
+                # 准备 Bank State 的形状以匹配 Hidden States
+                if input_ndim == 4:
+                    b_state_reshaped = b_state_reshaped.transpose(1, 2).reshape(batch_size, channel, height, width)
+                # else:
+                #     b_state_reshaped = b_state_reshaped.transpose(1, 2)
+                
+                # 使用 Soft Injection
+                hidden_states = soft_feature_injection(
+                    hidden_states, 
+                    b_state_reshaped, 
+                    threshold=self.threshold,
+                    # temperature=self.ttt_temperature
+                )
+                # nn_hidden_states = get_nn_feats(hidden_states, b_state_reshaped, threshold=self.threshold)
+                # hidden_states = hidden_states * (1-0.8) + 0.8 * nn_hidden_states
 
         # === 5. 更新 Bank State (Update Step) ===
         # 使用暂存的 cached_hidden_states
         if is_selfattn and (self.frame_id % self.interval == 0):
             self._ttt_update_step(attn, cached_hidden_states, cached_key, cached_value)
+
         self.frame_id += 1
         if self.vis:
             print("frame_id:", self.frame_id)

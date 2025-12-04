@@ -2,16 +2,16 @@
 
 input_json_file_name="eval.json"
 
-output_dir_name="TTT_reverse_FF"
+output_dir_name="v2v_FF_threshold_0.98"
 
 # TTT缓存相关设置
-use_ttt_cache="True" # default: false
+use_ttt_cache="False" # default: false
 reverse_tag="False" # default: false
-ttt_lr=0.5 # 更新cache时的学习率，default: 0.5
+ttt_lr=0.4 # 更新cache时的学习率，default: 0.5
 use_attn_concat="True" # 自注意力机制是否连接 default: false
 
 # 特征注入相关设置
-use_feature_injection="True" # default: true
+use_feature_injection="True" # default: false
 feature_similarity_threshold=0.98 # 特征相似度阈值，default: 0.98
 feature_injection_strength=0.5 # 特征注入时的强度，default: 0.5 TTT模式下不起效
 
@@ -23,13 +23,13 @@ random_cache_interval="False" # 仅针对原本的模式
 
 # 可见cuda设备
 device="cuda"
-cuda_visible_devices="2"
+cuda_visible_devices="0"
 
 # 遍历feature_similarity_threshold，从0.1到0.8，每次增加0.1
 for feature_similarity_threshold in $(seq 0.1 0.1 0.9)
 do
     echo $feature_similarity_threshold
-    output_dir_name="TTT_FF_tttlr_0.5_threshold_${feature_similarity_threshold}"
+    output_dir_name="v2v_FF_threshold_${feature_similarity_threshold}"
 
     cd vid2vid
     python ./batch_eval.py \
