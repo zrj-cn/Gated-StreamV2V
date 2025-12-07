@@ -16,7 +16,7 @@ def visualize_spatial_pca(height: int, width: int):
     base_path = "/home/zrj/project/ori_v2v/streamv2v/vid2vid/output/TTT/self_attn_bank/"
     file_template = "up_blocks.3.attentions.0.transformer_blocks.0.attn1.processor.frame{}.pt"
     # file_template = "down_blocks.0.attentions.0.transformer_blocks.0.attn1.processor.frame{}.pt"
-    frame_numbers = [4, 24, 48, 72]
+    frame_numbers = [48, 48, 48, 72]
     # frame_numbers = [0, 4, 8, 12]
     
     pca_results = {}
@@ -32,6 +32,11 @@ def visualize_spatial_pca(height: int, width: int):
         beta = data['beta']
         # 打印hidden_states的shape
         print(f"Frame {frame_num} beta shape: {beta.shape}")
+        # 输出最大值最小值和平均数
+        print(f"Frame {frame_num} beta max: {beta.max()}")
+        print(f"Frame {frame_num} beta min: {beta.min()}")
+        print(f"Frame {frame_num} beta mean: {beta.mean()}")
+
         beta = beta[0] # Shape: [seq_len, feature_dim]
         # reshape beta: torch.Size([7296, 1]) -> torch.Size([7296])
         beta = beta.squeeze(-1)
@@ -41,7 +46,7 @@ def visualize_spatial_pca(height: int, width: int):
         print(beta)
         print(f"Frame {frame_num} beta shape after reshape: {beta.shape}")
         # norm vis and save by cv2
-        beta = (beta - beta.min()) / (beta.max() - beta.min())
+        # beta = (beta - beta.min()) / (beta.max() - beta.min())
         import cv2
         cv2.imwrite(f"beta_{frame_num}.png", beta * 255)
         exit(-1)

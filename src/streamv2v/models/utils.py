@@ -1,6 +1,8 @@
 from collections import deque
 from typing import Tuple, Callable
 
+from numpy import dtype
+
 from einops import rearrange
 import torch
 import torch.nn.functional as F
@@ -11,35 +13,50 @@ import math
 # ==========================================
 # 新增：TTT3R 核心逻辑 (TTT3R Core Logic)
 # ==========================================
-def compute_ttt_beta_optimized(q_bank, k_in, scale=1.0, reverse_tag=False):
+
+def compute_ttt_beta_new(feature_bank, feature_in, reverse_tag=False):
     """
-    计算更新门控 Beta。
-    逻辑：如果 Bank 中的某个 Token 在 Current Frame (k_in) 中找到了非常相似的匹配，
-    说明这个 Token 是显著的/被激活的，我们应该更新它（或者保持它，取决于策略）。
-    
-    Args:
-        q_bank: (B, Heads, N_bank, D)
-        k_in:   (B, Heads, N_in, D)
+    修正版：计算基于位置敏感的余弦相似度门控。
+    逻辑：Compare bank[i] vs input[i] (Strict Spatial Alignment).
     """
-    dtype = q_bank.dtype
-    # 1. 计算完整的 Attention Score (不先求和)
-    # (B, Heads, N_bank, D) @ (B, Heads, D, N_in) -> (B, Heads, N_bank, N_in)
-    sim_matrix = torch.matmul(q_bank.to(torch.float32), k_in.transpose(-1, -2).to(torch.float32)) * scale
+    dtype = feature_bank.dtype
     
-    # 2. 获取每个 Bank Token 在当前帧中的最大匹配度
-    # 含义：Bank Token i 在当前帧里找到的最相似物体的相似度是多少？
-    # shape: (B, Heads, N_bank)
-    max_sim, _ = torch.max(sim_matrix, dim=-1)
+    # 1. 强制 L2 归一化 (计算 Cosine Sim 的基础)
+    # q_norm, k_norm: (B, Heads, N, D)
+    feature_bank_norm = F.normalize(feature_bank.to(torch.float32), p=2, dim=-1)
+    feature_in_norm = F.normalize(feature_in.to(torch.float32), p=2, dim=-1)
+
+    # 2. 【关键修改】逐位置点积 (Element-wise Dot Product)
+    # 不要使用 torch.sum(dim=2) 或 einsum 聚合！
+    # 直接相乘并在特征维度(dim=-1)求和，保留空间维度 N
+    # sim: (B, Heads, N) —— 每个位置都有一个独立的相似度分数
+    sim = torch.sum(feature_bank_norm * feature_in_norm, dim=-1)
     
-    # 3. 计算 Beta (Sigmoid 归一化)
-    # 这里的 temperature 可以控制门控的锐度，建议可调
-    beta = torch.sigmoid(max_sim) 
+    # 3. 缩放与偏移 (关键调节参数)
+    # Temperature: 放大差异，让 Sigmoid 更敏感
+    # Bias: 设定“变化”的阈值。
+    # 例如 bias=0.8，意味着相似度 < 0.8 就被认为是“变了”
+    temperature = 10.0
+    bias = 0.8
+    score = (sim - bias) * temperature
     
-    # 4. 聚合 Heads (取平均) -> (B, N_bank, 1)
-    beta = torch.mean(beta, dim=1, keepdim=True).transpose(1, 2)
+    # 4. 聚合多头 (Average over Heads)
+    # 不同 Head 可能关注不同特征，取平均作为该位置的整体一致性
+    # shape: (B, Heads, N) -> (B, 1, N)
+    score = torch.mean(score, dim=1, keepdim=True)
+    
+    # 调整维度以适配 Feature Bank: (B, 1, N) -> (B, N, 1)
+    score = score.transpose(1, 2)
+    
+    # 5. 计算 Beta (Sigmoid + Reverse)
+    # 相似度高 (sim > bias) -> score > 0 -> sigmoid > 0.5 -> beta < 0.5 (保持)
+    # 相似度低 (sim < bias) -> score < 0 -> sigmoid < 0.5 -> beta > 0.5 (更新)
+    beta = torch.sigmoid(score)
     
     if reverse_tag:
         beta = 1.0 - beta
+        # 增加一个微小的保底更新率，防止死锁
+        beta = torch.clamp(beta, min=0.01)
         
     return beta.to(dtype)
 
@@ -94,6 +111,8 @@ def compute_ttt_beta(q_bank, k_in, reverse_tag = False):
     # 1. 先对 Input Key 在序列维度 (dim=2) 求和
     # k_in shape: (B, Heads, N_in, D) -> k_sum shape: (B, Heads, D)
     k_sum = torch.mean(k_in_f32, dim=2)
+    # 再给平均的这个维度的数值乘上2
+    k_sum = k_sum
     
     # 2. 计算 Query 与 聚合Key 的点积
     # q_bank: (B, Heads, N_bank, D)
@@ -144,76 +163,58 @@ def apply_ttt_update(bank_state, update_delta, beta, lr=0.5):
 
 def soft_feature_injection(x, bank_output, threshold=0.9, alpha=2.0):
     """
-    改进的特征注入函数 (Scheme A + Scaled Dot-Product)。
-    
-    1. Retrieval: 使用 Scaled Cosine Similarity (Sim / (1/sqrt(d))) 替代固定温度，
-       让检索清晰度自适应特征维度。
-    2. Gating: 使用基于标准差的自适应缩放 (Adaptive Scaling via Std)，
-       让融合边界的锐度自适应当前画面的匹配分布。
-    
-    Args:
-        x: 当前帧特征 (B, N_x, C)
-        bank_output: Feature Bank 特征 (B, N_bank, C)
-        threshold: 相似度阈值 (默认 0.9)
-        alpha: 自适应缩放的基准系数 (建议 1.0 ~ 3.0，控制 Mask 的整体锐度)
+    改进点：在 Soft Retrieval 阶段加入 Hard Mask，防止低相似度的背景噪声污染特征。
+    只有相似度 > threshold 的 Token 才有资格参与特征重构。
     """
-    # 1. 兼容 deque 输入
-    if isinstance(bank_output, deque):
-        bank_output = torch.cat(list(bank_output), dim=1)
-        
-    # 获取维度信息
+    dtype = x.dtype
+    # ... (前置代码不变)
     head_dim = x.shape[-1]
     
-    # === Step 1: 归一化与相似度 (Cosine Similarity) ===
+    # === Step 1: 归一化与相似度 ===
     x_norm = F.normalize(x, p=2, dim=-1)
     bank_norm = F.normalize(bank_output, p=2, dim=-1)
-
-    # similarity range: [-1, 1]
     similarity = torch.matmul(x_norm, bank_norm.transpose(1, 2))
     
-    # === Step 2: 软检索 (Soft Retrieval) - "回忆" ===
-    # 使用标准的 Attention Scaling 思想
-    # 缩放因子: scale = 1 / sqrt(d)
-    # 对于归一化后的点积(余弦)，我们需要 '除以' scale (即乘以 sqrt(d)) 来放大数值，
-    # 防止 Softmax 过于平坦导致特征变糊。
-    # 例如：d=64, sqrt(d)=8. Sim范围[-1,1] -> Logits范围[-8,8]。
+    # === Step 2: 软检索 (带阈值过滤) ===
     scale_factor = 1.0 / math.sqrt(head_dim)
+    scaled_sim = similarity / scale_factor
     
-    # 注意这里是除法，相当于 logits = sim * sqrt(d)
-    attn = F.softmax(similarity / scale_factor, dim=-1) 
+    # 【关键改进】: 过滤掉不达标的 Token
+    # 创建一个 Mask，把相似度低于 threshold 的位置设为 -inf
+    # 这样 Softmax 后它们的权重就是 0，完全不会污染结果
+    # 注意：为了防止某一行全都被 mask 掉导致 NaN，需要处理全 -inf 的情况
+    mask = similarity < threshold
+    scaled_sim = scaled_sim.masked_fill(mask, -float('inf'))
+    
+    # 计算 Attention 权重
+    attn = F.softmax(scaled_sim, dim=-1) 
+    
+    # 处理全被 Mask 的情况（即没有一个 Token 达标）
+    # 如果某行全是 -inf，Softmax 结果是 NaN。
+    # 我们将 NaN 替换为 0 (或者均匀分布，但这里 0 更安全，意味着不检索任何东西)
+    # 实际上 Step 3 的 Gate 会拦截这种情况，所以 retrieved_feat 是多少无所谓，只要不是 NaN 即可。
+    attn = torch.nan_to_num(attn, nan=0.0)
     
     # 重构特征
+    # 现在 retrieved_feat 只包含相似度 > 0.9 的那些 Token 的混合
     retrieved_feat = torch.matmul(attn, bank_output)
     
-    # === Step 3: 生成软掩码 (Soft Mask) - "决策" (方案 A) ===
-    # 3.1 获取最佳匹配分数
-    max_sim, _ = torch.max(similarity, dim=-1, keepdim=True) # (B, N_x, 1)
-    
-    # 3.2 计算差异 (diff > 0 表示不匹配/新内容)
+    # === Step 3: 生成软掩码 (决策) ===
+    # 逻辑保持不变，这部分负责“平滑过渡”
+    max_sim, _ = torch.max(similarity, dim=-1, keepdim=True)
+
+    invalid_mask = (max_sim < threshold).to(dtype) # 1 表示无效(没找到)，0 表示有效
+    retrieved_feat = invalid_mask * x + (1 - invalid_mask) * retrieved_feat
+
     diff = threshold - max_sim
-    
-    # 3.3 计算当前帧内差异的标准差 (反映了匹配的不确定性范围)
-    # 加上 eps 防止除以 0（例如纯色背景导致 std=0）
     std = torch.std(diff, dim=1, keepdim=True) + 1e-6
-    
-    # 3.4 动态计算 Sigmoid 的缩放系数
-    # 如果分布很散(std大)，adaptive_scale 变小，过渡带变宽(平滑)
-    # 如果分布很挤(std小)，adaptive_scale 变大，过渡带变窄(锐利)
     adaptive_scale = alpha / std
-    
-    # 3.5 计算掩码
-    # 当 diff > 0 (不匹配) -> sigmoid > 0.5 -> mask 趋向 1 -> 保留 x
-    # 当 diff < 0 (匹配)   -> sigmoid < 0.5 -> mask 趋向 0 -> 使用 retrieved_feat
     soft_mask = torch.sigmoid(diff * adaptive_scale)
     
-    # === Step 4: 特征融合 (Blending) ===
+    # === Step 4: 特征融合 ===
     out = soft_mask * x + (1 - soft_mask) * retrieved_feat
     
     return out
-
-# ==========================================
-# 原有函数 (保持兼容性)
-# ==========================================
 
 def get_nn_feats(x, y, threshold=0.9):
     if type(x) is deque:
@@ -228,7 +229,8 @@ def get_nn_feats(x, y, threshold=0.9):
 
     max_cosine_values, nearest_neighbors_indices = torch.max(cosine_similarity, dim=-1)
     mask = max_cosine_values < threshold
-    # print('mask ratio', torch.sum(mask)/x.shape[0]/x.shape[1])
+    # 输出被threshold过滤的token数量
+    # print(f"mask ratio: {torch.sum(mask)/x.shape[0]/x.shape[1]:.4f}")
     indices_expanded = nearest_neighbors_indices.unsqueeze(-1).expand(-1, -1, x_norm.size(-1))
     nearest_neighbor_tensor = torch.gather(y, 1, indices_expanded)
     selected_tensor = torch.where(mask.unsqueeze(-1), x, nearest_neighbor_tensor)

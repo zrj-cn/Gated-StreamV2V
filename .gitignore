@@ -6,12 +6,15 @@ vid2vid/source_video
 vid2vid/output
 vid2vid/lora_weights
 vid2vid/lora_weights2/*
-streamv2v/tools/source_video/*
+tools/source_video/*
 data
 data/*
 .vscode/
 engines/
 output/
+tools/warp_error_log
+tools/clip_score_log
+vid2vid/saved_states
 *.csv
 *.mp4
 *.safetensors

@@ -13,7 +13,7 @@ from diffusers.utils.import_utils import is_xformers_available
 from diffusers.utils.torch_utils import maybe_allow_in_graph
 from diffusers.models.lora import LoRACompatibleLinear, LoRALinearLayer
 
-from .utils import soft_feature_injection, compute_ttt_beta
+from .utils import soft_feature_injection, compute_ttt_beta_new
 
 
 if is_xformers_available():
@@ -23,9 +23,10 @@ else:
     xformers = None
 
 
-class TTTCachedSTXFormersAttnProcessor:
+class TTTCachedSTXFormersAttnProcessor_cos:
     r"""
     加入门控实现利用TTT特性
+
     """
 
     def __init__(self, attention_op: Optional[Callable] = None, name=None, 
@@ -59,81 +60,70 @@ class TTTCachedSTXFormersAttnProcessor:
         self.use_attn_concat = use_concat
         self.vis = vis
 
-    def _ttt_update_step(self, attn, input_hidden_states, cached_key, cached_value, scale=1.0):
-        """
-        TTT Update Step
-        """
-        beta = torch.tensor([])
-        update_delta = torch.tensor([])
-        args = () if USE_PEFT_BACKEND else (scale,)
-        if self.bank_state is not None:
-            if self.vis:
-                print("bank is not none:", self.bank_state.shape)
-
-            q_bank = attn.to_q(self.bank_state, *args)
-            k_in = cached_key.clone()
-            v_in = cached_value.clone()
-
-            q_bank = attn.head_to_batch_dim(q_bank)
-            k_in = attn.head_to_batch_dim(k_in)
-            v_in = attn.head_to_batch_dim(v_in)
-
-            # 2. 计算 Update Delta (检索新信息)
-
-            update_attn_out = xformers.ops.memory_efficient_attention(
-                q_bank, k_in, v_in, op=self.attention_op, scale=attn.scale
-            )
-
-            update_attn_out = update_attn_out.to(q_bank.dtype)
-            update_attn_out = attn.batch_to_head_dim(update_attn_out)
-
-            if self.vis:
-                print("update_attn_out shape:", update_attn_out.shape)
-
-            update_delta = update_attn_out
-
-            # 3. 计算 Beta (更新置信度)
-            batch_size = input_hidden_states.shape[0]
-            q_bank_reshaped = q_bank.view(batch_size, attn.heads, -1, q_bank.shape[-1])
-            k_in_reshaped = k_in.view(batch_size, attn.heads, -1, k_in.shape[-1])
+    def _ttt_update_step(self, attn, input_hidden_states, scale=1.0):
+            """
+            TTT Update Step (Spatial / Pixel-wise Mode)
             
-            if self.vis:
-                print("q_bank_reshaped shape:", q_bank_reshaped.shape)
-                print("k_in_reshaped shape:", k_in_reshaped.shape)
+            Logic:
+            1. Beta: Calculated via spatial cosine similarity between Bank and Input Features.
+            (Low Sim -> High Beta -> Update)
+            2. Target: Direct Input Features (Overwrite old content with new).
+            """
+            args = () if USE_PEFT_BACKEND else (scale,)
             
-            beta = compute_ttt_beta(
-                q_bank_reshaped, 
-                k_in_reshaped,
-                reverse_tag=self.reverse_tag
-            )
+            if self.bank_state is not None:
+                if self.vis:
+                    print("bank is not none:", self.bank_state.shape)
 
-            beta = beta * self.ttt_lr
-            self.bank_state = (1 - beta) * self.bank_state + beta * update_delta
+                feature_bank = self.bank_state.unsqueeze(1)        # (B, 1, N, C)
+                feature_in   = input_hidden_states.unsqueeze(1)    # (B, 1, N, C)
+                
+                if self.vis:
+                    print("feature_bank shape:", feature_bank.shape)
+                
+                # 调用 utils 中的函数 (确保它是我们讨论过的逐像素 Cosine 版本)
+                beta = compute_ttt_beta_new(
+                    feature_bank, 
+                    feature_in,
+                    reverse_tag=self.reverse_tag # True: 不相似 -> Beta高 -> 更新
+                )
+
+                # === 2. 设定 Update Delta (更新目标) ===
+                # 我们的目标是：检测到变化后，直接用当前帧的新内容覆盖旧内容。
+                # 所以 Delta 就是当前帧的特征本身。
+                update_delta = input_hidden_states.clone()
+
+                if self.vis:
+                    print("update_delta shape (from input):", update_delta.shape)
+
+                # === 3. 执行更新 ===
+                # S_new = (1 - lr*beta) * S_old + lr*beta * Input
+                beta = beta * self.ttt_lr
+                self.bank_state = (1 - beta) * self.bank_state + beta * update_delta
+                
+                # === 4. 生成可视化用的 Output ===
+                hidden_states_out = attn.to_out[0](self.bank_state.clone(), *args)
+                hidden_states_out = attn.to_out[1](hidden_states_out)
+
+            else:
+                # 初始化 Bank State
+                if self.vis:
+                    print("init bank state:", input_hidden_states.shape)
+                self.bank_state = input_hidden_states.clone()
+                return 
             
-            hidden_states_out = attn.to_out[0](self.bank_state.clone(), *args)
-            hidden_states_out = attn.to_out[1](hidden_states_out)
+            # === 保存可视化数据 ===
+            if self.save_attn_map and self.frame_id % 4 == 0:
 
-        else:
-            # 初始化 Bank State
-            if self.vis:
-                print("init bank state:", input_hidden_states.shape)
-            self.bank_state = input_hidden_states.clone()
-            return 
-        
-        if self.save_attn_map and self.frame_id % 4 == 0 and self.frame_id <= 48:
-            key = attn.to_k(self.bank_state, *args)
-            value = attn.to_v(self.bank_state, *args)
-            query = attn.to_q(self.bank_state, *args)
-            os.makedirs(f'./saved_states/TTT/self_attn_bank/', exist_ok=True)
-            feats = {
-                        "hidden_states": self.bank_state.clone().cpu(),
-                        "hidden_states_out": hidden_states_out.clone().cpu(),
-                        "beta": beta.clone().cpu(),
-                        "update_delta": update_delta.clone().cpu(),
-                    }
-            torch.save(feats, f'./saved_states/TTT/self_attn_bank/{self.name}.frame{self.frame_id}.pt')
-        
-
+                
+                os.makedirs(f'./saved_states/TTT/self_attn_bank/', exist_ok=True)
+                feats = {
+                            "hidden_states": self.bank_state.clone().cpu(),     # 原始 Bank (Pre-proj)
+                            "hidden_states_out": hidden_states_out.clone().cpu(), # 投影后 Bank (Post-proj)
+                            "beta": beta.clone().cpu(),                         # 更新热力图
+                            "update_delta": update_delta.clone().cpu(),         # 更新目标 (即 Input)
+                        }
+                torch.save(feats, f'./saved_states/TTT/self_attn_bank/{self.name}.frame{self.frame_id}.pt')
              
     def __call__(
         self,
@@ -195,15 +185,9 @@ class TTTCachedSTXFormersAttnProcessor:
         key = attn.to_k(encoder_hidden_states, *args)
         value = attn.to_v(encoder_hidden_states, *args)
 
-        # 暂存K和V
-        cached_key = key.clone()
-        cached_value = value.clone()
-
         if is_selfattn:
             if self.vis:
                 print("自注意力self-attention")
-            cached_key = key.clone()
-            cached_value = value.clone()
 
             if self.bank_state is not None:
 
@@ -282,12 +266,12 @@ class TTTCachedSTXFormersAttnProcessor:
                     hidden_states, 
                     b_state_reshaped, 
                     threshold=self.threshold,
-                    temperature=self.ttt_temperature
+                    # temperature=self.ttt_temperature
                 )
 
         # === 5. 更新 Bank State (Update Step) ===
         if is_selfattn and (self.frame_id % self.interval == 0):
-            self._ttt_update_step(attn, cached_hidden_states, cached_key, cached_value)
+            self._ttt_update_step(attn, cached_hidden_states)
             # self._ttt_update_step_opt(attn, cached_hidden_states, None, None)
         self.frame_id += 1
         if self.vis:

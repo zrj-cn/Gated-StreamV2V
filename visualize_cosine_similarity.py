@@ -2,12 +2,20 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-import argparse
 from sklearn.metrics.pairwise import cosine_similarity
 
-def visualize_cosine_similarity(frame_num: int, target_x: int, target_y: int, height: int, width: int):
+# ===================== 手动配置参数（可根据需要修改） =====================
+FRAME_NUM = 24       # 要分析的帧号
+TARGET_X = 20        # 目标patch的x坐标
+TARGET_Y = 20        # 目标patch的y坐标
+HEIGHT = 64          # 特征图的空间高度
+WIDTH = 114          # 特征图的空间宽度
+TARGET_DIM = 0       # 要显示的维度（0-3，对应原4个维度）
+# =========================================================================
+
+def visualize_cosine_similarity(frame_num: int, target_x: int, target_y: int, height: int, width: int, target_dim: int):
     """
-    Visualizes the cosine similarity maps for all 4 dimensions between a target patch and all other patches.
+    Visualizes the cosine similarity map for a single specified dimension (only pure image with red dot, no other elements).
 
     Args:
         frame_num (int): The frame number to analyze.
@@ -15,8 +23,14 @@ def visualize_cosine_similarity(frame_num: int, target_x: int, target_y: int, he
         target_y (int): The y-coordinate of the target patch.
         height (int): The spatial height of the feature map.
         width (int): The spatial width of the feature map.
+        target_dim (int): The specific dimension to visualize (0-3).
     """
-    base_path = "/home/zrj/project/ori_v2v/streamv2v/vid2vid/output/self_attn_feats_SD/"
+    # 检查维度合法性
+    if target_dim not in [0, 1, 2, 3]:
+        print(f"Error: Target dimension {target_dim} is invalid (must be 0-3). Exiting.")
+        return
+
+    base_path = "/home/zrj/project/ori_v2v/streamv2v/vid2vid/saved_states/TTT_soft_ori/self_attn_feats_SD"
     file_template = "up_blocks.3.attentions.1.transformer_blocks.0.attn1.processor.frame{}.pt"
 
     file_path = os.path.join(base_path, file_template.format(frame_num))
@@ -24,7 +38,7 @@ def visualize_cosine_similarity(frame_num: int, target_x: int, target_y: int, he
         print(f"File not found: {file_path}")
         return
 
-    print(f"Loading hidden states for frame {frame_num}...")
+    print(f"Loading hidden states for frame {frame_num} (dimension {target_dim})...")
     data = torch.load(file_path, map_location='cpu')
     all_hidden_states = data['hidden_states']  # Shape: [4, seq_len, feature_dim]
 
@@ -41,59 +55,34 @@ def visualize_cosine_similarity(frame_num: int, target_x: int, target_y: int, he
         print(f"Target coordinates ({target_x}, {target_y}) are out of bounds for dimensions ({width}, {height}). Exiting.")
         return
 
-    # Create a 2x2 subplot to display the 4 similarity maps
-    fig, axes = plt.subplots(2, 2, figsize=(12, 12 * (height / width) * 0.9))
-    axes = axes.flatten() # Flatten for easy iteration
+    # 仅计算指定维度的相似度图
+    hidden_states = all_hidden_states[target_dim]
+    target_patch_index = target_y * width + target_x
+    target_vector = hidden_states[target_patch_index].unsqueeze(0).numpy()
+    similarity_scores = cosine_similarity(target_vector, hidden_states.numpy())[0]
+    similarity_map = similarity_scores.reshape((height, width))
 
-    dim_titles = [
-        "Dim 0: Unconditional (A)",
-        "Dim 1: Conditional (A)",
-        "Dim 2: Unconditional (B)",
-        "Dim 3: Conditional (B)",
-    ]
+    # 创建画布，设置边距为0，无坐标轴
+    fig, ax = plt.subplots(1, 1, figsize=(width/10, height/10), dpi=100)  # 按特征图尺寸比例创建画布
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)  # 移除所有边距
 
-    print(f"Calculating cosine similarity maps with the patch at ({target_x}, {target_y})...")
+    # 绘制相似度图
+    ax.imshow(similarity_map, cmap='viridis', vmin=similarity_map.min(), vmax=similarity_map.max())
     
-    # Find the min and max similarity scores across all maps for a consistent color scale
-    all_sim_maps = []
-    for i in range(4):
-        hidden_states = all_hidden_states[i]
-        target_patch_index = target_y * width + target_x
-        target_vector = hidden_states[target_patch_index].unsqueeze(0).numpy()
-        similarity_scores = cosine_similarity(target_vector, hidden_states.numpy())[0]
-        similarity_map = similarity_scores.reshape((height, width))
-        all_sim_maps.append(similarity_map)
+    # 绘制红色圆点标记目标patch
+    ax.scatter(target_x, target_y, s=180, c='red', marker='o', edgecolor='white', linewidth=1)
     
-    vmin = min(m.min() for m in all_sim_maps)
-    vmax = max(m.max() for m in all_sim_maps)
+    # 完全隐藏坐标轴（刻度、标签、边框）
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.axis('off')  # 关闭所有坐标轴显示
 
-    # Loop through each of the 4 dimensions to plot
-    for i, (sim_map, ax) in enumerate(zip(all_sim_maps, axes)):
-        im = ax.imshow(sim_map, cmap='viridis', vmin=vmin, vmax=vmax)
-        ax.scatter(target_x, target_y, s=100, c='red', marker='x')
-        ax.set_title(dim_titles[i])
-        ax.set_xlabel('Width')
-        ax.set_ylabel('Height')
-
-    fig.suptitle(f'Cosine Similarity Maps for Frame {frame_num}\nReference Patch at ({target_x}, {target_y})', fontsize=16)
-    fig.tight_layout(rect=[0, 0.03, 1, 0.92])
-
-    # Add a single, shared color bar for the entire figure
-    cbar = fig.colorbar(im, ax=axes.ravel().tolist(), shrink=0.6, pad=0.08)
-    cbar.set_label('Cosine Similarity')
-
-    output_path = f'cosine_similarity_4dims_frame{frame_num}_patch({target_x},{target_y}).png'
-    plt.savefig(output_path)
-    print(f"Combined similarity map saved to {output_path}")
-    plt.show()
+    # 输出文件名包含维度信息
+    output_path = f'cosine_similarity_dim{target_dim}_frame{frame_num}_patch({target_x},{target_y}).png'
+    # 保存时去掉多余空白，设置bbox_inches='tight'和pad_inches=0
+    plt.savefig(output_path, bbox_inches='tight', pad_inches=0, dpi=100)
+    print(f"Pure similarity map saved to {output_path}")
+    plt.close(fig)  # 关闭画布释放内存
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Visualize cosine similarity of attention hidden states for all 4 dimensions.')
-    parser.add_argument('--frame', type=int, default=24, help='The frame number to analyze.')
-    parser.add_argument('--x', type=int, required=True, help='The x-coordinate of the target patch.')
-    parser.add_argument('--y', type=int, required=True, help='The y-coordinate of the target patch.')
-    parser.add_argument('--height', type=int, default=64, help='Spatial height of the feature map.')
-    parser.add_argument('--width', type=int, default=114, help='Spatial width of the feature map.')
-    args = parser.parse_args()
-    
-    visualize_cosine_similarity(args.frame, args.x, args.y, args.height, args.width)
+    visualize_cosine_similarity(FRAME_NUM, TARGET_X, TARGET_Y, HEIGHT, WIDTH, TARGET_DIM)

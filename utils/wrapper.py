@@ -14,7 +14,9 @@ import random
 
 from src.streamv2v import StreamV2V
 from src.streamv2v.image_utils import postprocess_image
-from src.streamv2v.models.attention_processor import CachedSTXFormersAttnProcessor, CachedSTAttnProcessor2_0, TTTCachedSTXFormersAttnProcessor
+from src.streamv2v.models.attention_processor import CachedSTXFormersAttnProcessor, CachedSTAttnProcessor2_0
+from src.streamv2v.models.ttt_attention import TTTCachedSTXFormersAttnProcessor
+from src.streamv2v.models.ttt_attention_new import TTTCachedSTXFormersAttnProcessor_cos
 
 
 torch.set_grad_enabled(False)
@@ -573,7 +575,7 @@ class StreamV2VWrapper:
                     for key, attn_processor in attn_processors.items():
                         assert isinstance(attn_processor, XFormersAttnProcessor), \
                               "We only replace 'XFormersAttnProcessor' to 'TTTCachedSTXFormersAttnProcessor'"
-                        new_attn_processors[key] = TTTCachedSTXFormersAttnProcessor(name=key,
+                        new_attn_processors[key] = TTTCachedSTXFormersAttnProcessor_cos(name=key,
                                                                                  use_feature_injection=self.use_feature_injection,
                                                                                  feature_similarity_threshold=self.feature_similarity_threshold,
                                                                                  interval=self.cache_interval, 

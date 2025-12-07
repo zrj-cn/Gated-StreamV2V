@@ -13,15 +13,16 @@ def visualize_spatial_pca(height: int, width: int):
         height (int): The spatial height of the feature map.
         width (int): The spatial width of the feature map.
     """
-    base_path = "/home/zrj/project/ori_v2v/streamv2v/vid2vid/output/TTT/self_attn_bank/"
-    # base_path = "/home/zrj/project/ori_v2v/streamv2v/vid2vid/output/TTT/self_attn_feats_SD/"
+    src = "v2v"
+    base_path = f"/home/zrj/project/ori_v2v/streamv2v/vid2vid/saved_states/{src}/self_attn_bank"
+    # base_path = f"/home/zrj/project/ori_v2v/streamv2v/vid2vid/saved_states/{src}/self_attn_feats_SD/"
     file_template = "up_blocks.3.attentions.0.transformer_blocks.0.attn1.processor.frame{}.pt"
     # file_template = "down_blocks.0.attentions.0.transformer_blocks.0.attn1.processor.frame{}.pt"
-    frame_numbers = [4, 12, 24, 36, 48]
-    # frame_numbers = [0, 4, 8, 12]
-    
-    # feature_name = "hidden_states"
-    feature_name = "update_delta"
+    frame_numbers = [20, 24, 28, 32, 36, 40, 44, 48]
+    # frame_numbers = [15, 24, 36, 48]
+    output_path = f'test7.png'
+    feature_name = "hidden_states"
+    # feature_name = "update_delta"
 
     pca_results = {}
 
@@ -65,11 +66,10 @@ def visualize_spatial_pca(height: int, width: int):
 
     for i, (frame_num, pc_image) in enumerate(pca_results.items()):
         axes[i].imshow(pc_image)
-        axes[i].set_title(f'Frame {frame_num} - Spatial PCA')
+        axes[i].set_title(f'Frame {frame_num}')
         axes[i].axis('off')
 
     plt.tight_layout()
-    output_path = f'spatial_pca_visualization_TTT_bank_up3_4_12_24_36_48_{height}x{width}.png'
     # output_path = f'spatial_pca_visualization_TTT_bank_down0_0_12_24_36_48_{height}x{width}.png'
     plt.savefig(output_path)
     print(f"Spatial PCA visualization plot saved to {output_path}")
