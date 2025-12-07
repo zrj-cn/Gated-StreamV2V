@@ -17,6 +17,7 @@ tools/clip_score_log
 vid2vid/saved_states
 *.csv
 *.mp4
+*.sh
 *.safetensors
 result_lcm.png
 model.ckpt
