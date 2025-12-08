@@ -2,7 +2,6 @@
 
 # vid2vid/demo_selfie/*
 vid2vid/tests
-vid2vid/source_video
 vid2vid/output
 vid2vid/lora_weights
 vid2vid/lora_weights2/*
@@ -20,6 +19,7 @@ tools/data_processor
 vid2vid/saved_states
 *.csv
 *.mp4
+!vid2vid/source_video
 run*.sh
 *.safetensors
 result_lcm.png

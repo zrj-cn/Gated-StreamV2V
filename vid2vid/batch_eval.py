@@ -7,17 +7,17 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Process a JSON file contains multiple edits.")
     parser.add_argument('--cuda_visible_devices', type=str, default="7", help='CUDA visible devices.')
     parser.add_argument('--json_file', type=str, help='The path to the JSON file to process.')
-    parser.add_argument('--output_dir', type=str, default="/home/zrj/project/ori_v2v/streamv2v/vid2vid/output/motion_strength_1", help='The directory to save the output videos.')
-    parser.add_argument('--random_cache_interval', type=str, default="False", help='Whether to use random cache interval.')
-    parser.add_argument('--cache_interval', type=int, default=4, help='Cache interval for processing.')
+    parser.add_argument('--output_dir', type=str, default="/home/zrj/project/ori_v2v/streamv2v/vid2vid/output/default", help='The directory to save the output videos.')
+    parser.add_argument('--cache_interval', type=int, default=1, help='Cache interval for processing.')
     parser.add_argument('--noise_strength', type=str, default=None, help='Noise strength to use for all videos. Overrides the value in the json file.')
-    parser.add_argument('--use_ttt_cache', type=str, default="False", help='Whether to use TTT cache.')
-    parser.add_argument('--reverse_tag', type=str, default="False", help='Whether to use reverse tag.')
+    parser.add_argument('--use_cached_attn', type=str, default="True", help='Whether to use cached attention.')
+    parser.add_argument('--cached_attn_style', type=str, default="similarity", help='Cached attention style.')
+    parser.add_argument('--reverse_tag', type=str, default="True", help='Whether to use reverse tag.')
     parser.add_argument('--use_attn_concat', type=str, default="False", help='Whether to use attn concat.')
     parser.add_argument('--use_feature_injection', type=str, default="True", help='Whether to use feature injection.')
     parser.add_argument('--feature_similarity_threshold', type=float, default=0.98, help='Feature similarity threshold.')
     parser.add_argument('--feature_injection_strength', type=float, default=0.5, help='Feature injection strength.')
-    parser.add_argument('--ttt_lr', type=float, default=0.5, help='TTT learning rate.')
+    parser.add_argument('--ttt_lr', type=float, default=1.0, help='Used to scale the beta of the gated attention layer.')
 
     return parser.parse_args()
 
@@ -59,7 +59,7 @@ for item in data:
         out_put_video = f"{args.output_dir}/{video_name}.mp4"
         # 如果存在这个video，则跳过
         if os.path.exists(out_put_video):
-            print(f"视频已存在：{out_put_video}")
+            print(f"video already exists, jump: {out_put_video}")
             continue
         command = [
             'python', "main.py",
@@ -84,26 +84,11 @@ for item in data:
             "--feature_similarity_threshold", str(args.feature_similarity_threshold),
             "--feature_injection_strength", str(args.feature_injection_strength),
             "--ttt_lr", str(args.ttt_lr),
-            "--use_ttt_cache", args.use_ttt_cache,
+            "--cached_attn_style", args.cached_attn_style,
             "--reverse_tag", args.reverse_tag,
         ]
     else:
-        command = [
-            'python', "main.py",
-            "--cuda_visible_devices", args.cuda_visible_devices,
-            "--input", f"{file_path}/{src_vid_name}.mp4",
-            "--prompt", prompt,
-            "--output_dir", args.output_dir,
-            "--model_id", model_id,
-            "--diffusion_steps", diffusion_steps,
-            "--noise_strength", noise_strength,
-            "--acceleration", "xformers",
-            "--use_cached_attn",
-            "--use_feature_injection",
-            "--cache_maxframes", "1",
-            "--use_tome_cache",
-            "--do_add_noise", 
-            "--cache_interval", str(args.cache_interval),
-            "--guidance_scale", "1.0" ,
-        ]
+            # Error: vid_name not found in JSON; please use ori_batch_eval.py
+            print(f"vid_name not found in JSON, please use ori_batch_eval.py: {item}")
+            continue
     subprocess.run(command)
