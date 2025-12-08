@@ -78,7 +78,6 @@ for item in data:
             "--do_add_noise", 
             "--guidance_scale", "1.0" ,
             "--cache_interval", str(args.cache_interval),
-            "--use_random_cache_interval", args.random_cache_interval,
             "--use_attn_concat", args.use_attn_concat,
             "--use_feature_injection", args.use_feature_injection,
             "--feature_similarity_threshold", str(args.feature_similarity_threshold),
