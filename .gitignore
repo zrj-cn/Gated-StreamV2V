@@ -26,7 +26,7 @@ result_lcm.png
 model.ckpt
 *.png
 !./demo_w_camera/frontend/static/favicon.png
-
+tools/json_data_process.py
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

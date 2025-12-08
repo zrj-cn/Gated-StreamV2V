@@ -6,9 +6,9 @@ import cv2
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cuda_visible_devices', type=str, default='4', help='CUDA visible devices.')
+    parser.add_argument('--cuda_visible_devices', type=str, default='7', help='CUDA visible devices.')
     parser.add_argument('--device', type=str, default='cuda', help='Device to run the model on.')
-    parser.add_argument('--method_version', type=str, default='motion_strength_2', help='The name of the method view.')
+    parser.add_argument('--method_version', type=str, default='default', help='The name of the method view.')
     parser.add_argument('--set_file_path', type=str, default='user_study_upload/eval_motion.json', help='Path to your JSON file.')
     return parser.parse_args()
 
@@ -49,7 +49,8 @@ if __name__ == "__main__":
     edit_video_dir = f"output/{method_version}" 
     video_names = list(video_maps.keys())
 
-    # TODO 可能需要提前下载或者利用hf-mirror
+    # You may need to download the model in advance or use hf-mirror
+    # Replace the model path with your own
     model = CLIPModel.from_pretrained("/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/clip-vit-base-patch32")
     model = model.to(device)
     processor = CLIPProcessor.from_pretrained("/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/clip-vit-base-patch32")
@@ -123,6 +124,6 @@ if __name__ == "__main__":
     # print("Avg prompt score ", sum(prompt_score) / len(prompt_score))
 
     json.dump(out_json, open(f"./clip_score_log/{method_version}.clipscore", "w"), sort_keys=True, indent=4)
-    # 同时将平均误差写入json文件
+    # Also write the average score into the JSON file
     out_json['avg_score'] = sum(consistency_score) / len(consistency_score)
     json.dump(out_json, open(f"./clip_score_log/{method_version}.clipscore", "w"), sort_keys=True, indent=4)

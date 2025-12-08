@@ -173,7 +173,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Calculate warp error for video evaluation')
     parser.add_argument('--cuda_visible_devices', type=str, default='7', help='CUDA visible devices.')
     parser.add_argument('--device', type=str, default='cuda', help='Device to use (cuda or cpu)')
-    parser.add_argument('--method_version', type=str, default='motion_strength_2', help='Method version to evaluate')
+    parser.add_argument('--method_version', type=str, default='default', help='Method version to evaluate')
     parser.add_argument('--set_file_path', type=str, default='user_study_upload/eval_motion.json', help='Path to the JSON file containing evaluation data')
     return parser.parse_args()
 
@@ -190,8 +190,10 @@ if __name__ == "__main__":
 
     # model = raft_large(weights=raft_path, progress=False).to("cuda")
 
+    # You may need to download the model in advance or use hf-mirror
+    # Replace the model path with your own
     local_weights_path = "/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/raft_large_C_T_SKHT_V2-ff5fadd5.pth"
-    # 初始化模型 → 加载权重 → 移到指定设备
+
     model = raft_large(weights=None, progress=False)
     state_dict = torch.load(local_weights_path, map_location="cpu")
     model.load_state_dict(state_dict, strict=False)
@@ -199,11 +201,11 @@ if __name__ == "__main__":
 
     model = model.eval()
 
-    # 使用命令行参数指定的文件路径
+
     with open(set_file_path, 'r') as file:
         json_data = json.load(file)
 
-    # method_name = 'tokenflow'
+
     ref_video_dir = "source_video"
     edit_video_dir = f"output/{method_version}"
 
