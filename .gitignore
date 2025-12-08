@@ -1,7 +1,7 @@
 # https://github.com/github/gitignore/blob/main/Python.gitignore
 
 # vid2vid/demo_selfie/*
-vid2vid/tests/*
+vid2vid/tests
 vid2vid/source_video
 vid2vid/output
 vid2vid/lora_weights
@@ -17,7 +17,7 @@ tools/clip_score_log
 vid2vid/saved_states
 *.csv
 *.mp4
-*.sh
+run*.sh
 *.safetensors
 result_lcm.png
 model.ckpt
