@@ -2,7 +2,6 @@
 
 # vid2vid/demo_selfie/*
 vid2vid/tests
-!vid2vid/source_video
 vid2vid/output
 vid2vid/lora_weights
 vid2vid/lora_weights2/*
@@ -220,3 +219,5 @@ __pycache__/
 
 models/RealESR*
 *.safetensors
+
+!vid2vid/source_video/*
