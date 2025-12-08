@@ -206,8 +206,8 @@ if __name__ == "__main__":
         json_data = json.load(file)
 
 
-    ref_video_dir = "source_video"
-    edit_video_dir = f"output/{method_version}"
+    ref_video_dir = "/home/zrj/project/ori_v2v/streamv2v/vid2vid/source_video"
+    edit_video_dir = f"/home/zrj/project/ori_v2v/streamv2v/vid2vid/output/{method_version}"
 
     video_error = []
     out_json = {}

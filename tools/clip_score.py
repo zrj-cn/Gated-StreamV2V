@@ -46,7 +46,7 @@ if __name__ == "__main__":
         json_data = json.load(file)
     video_maps = create_vid_prompt_dict(json_data)
 
-    edit_video_dir = f"output/{method_version}" 
+    edit_video_dir = f"/home/zrj/project/ori_v2v/streamv2v/vid2vid/output/{method_version}" 
     video_names = list(video_maps.keys())
 
     # You may need to download the model in advance or use hf-mirror
