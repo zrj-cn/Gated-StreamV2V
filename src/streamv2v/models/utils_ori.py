@@ -6,7 +6,6 @@ import torch
 import torch.nn.functional as F
 
 def get_nn_feats(x, y, threshold=0.9):
-# 用于修改Output特征
     if type(x) is deque:
         x = torch.cat(list(x), dim=1)
     if type(y) is deque:
@@ -16,7 +15,6 @@ def get_nn_feats(x, y, threshold=0.9):
     y_norm = F.normalize(y, p=2, dim=-1)
 
     cosine_similarity = torch.matmul(x_norm, y_norm.transpose(1, 2))
-    # TODO -ZRJ-根据cosine_similarity 选择y中与x最相似的k个特征向量，然后将相似性归一化后加权
     max_cosine_values, nearest_neighbors_indices = torch.max(cosine_similarity, dim=-1)
     mask = max_cosine_values < threshold
     # print('mask ratio', torch.sum(mask)/x.shape[0]/x.shape[1])

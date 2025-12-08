@@ -15,8 +15,8 @@ import random
 from src.streamv2v import StreamV2V
 from src.streamv2v.image_utils import postprocess_image
 from src.streamv2v.models.attention_processor import CachedSTXFormersAttnProcessor, CachedSTAttnProcessor2_0
-from src.streamv2v.models.ttt_attention import TTTCachedSTXFormersAttnProcessor
-from src.streamv2v.models.ttt_attention_new import TTTCachedSTXFormersAttnProcessor_cos
+from src.streamv2v.models.confidence_gate_attention import ConfidenceGateCachedSTXFormersAttnProcessor
+from src.streamv2v.models.similarity_gate_attention import SimilarityGateCachedSTXFormersAttnProcessor
 
 
 torch.set_grad_enabled(False)
@@ -39,7 +39,7 @@ class StreamV2VWrapper:
         frame_buffer_size: int = 1,
         width: int = 512,
         height: int = 512,
-        warmup: int = 10, # 预热次数，需要了解其作用
+        warmup: int = 10, 
         acceleration: Literal["none", "xformers", "tensorrt"] = "xformers",
         do_add_noise: bool = True,
         device_ids: Optional[List[int]] = None,
@@ -51,11 +51,11 @@ class StreamV2VWrapper:
         use_denoising_batch: bool = True,
         cfg_type: Literal["none", "full", "self", "initialize"] = "none",
         use_cached_attn: bool = True,
-        use_ttt_cache: bool = False,
+        cached_attn_style: Literal["origin", "confidence", "similarity"] = "similarity",
         use_feature_injection: bool = True,
         feature_injection_strength: float = 0.8,
         feature_similarity_threshold: float = 0.98,
-        cache_interval: int = 4,
+        cache_interval: int = 1,
         cache_maxframes: int = 1, 
         use_tome_cache: bool = True,
         use_random_cache_interval: bool = False,
@@ -66,93 +66,12 @@ class StreamV2VWrapper:
         use_safety_checker: bool = False,
         engine_dir: Optional[Union[str, Path]] = "engines",
         save_attn_map: bool = False,
-        reverse_tag: bool = False,
+        reverse_tag: bool = True,
         vis: bool = False,
         use_attn_concat: bool = True,
-        ttt_lr: float = 0.5,
+        ttt_lr: float = 1.0,
     ):
-        """
-        Initializes the StreamV2VWrapper.
 
-        Parameters
-        ----------
-        model_id_or_path : str
-            The model identifier or path to load.
-        t_index_list : List[int]
-            The list of indices to use for inference.
-        lora_dict : Optional[Dict[str, float]], optional
-            Dictionary of LoRA names and their corresponding scales, 
-            by default None. Example: {'LoRA_1': 0.5, 'LoRA_2': 0.7, ...}
-        output_type : Literal["pil", "pt", "np", "latent"], optional
-            The type of output image, by default "pil".
-        mode : Literal["img2img", "txt2img"], optional
-            txt2img or img2img, by default "img2img".
-        lcm_lora_id : Optional[str], optional
-            The identifier for the LCM-LoRA to load, by default None.
-            If None, the default LCM-LoRA ("latent-consistency/lcm-lora-sdv1-5") is used.
-        vae_id : Optional[str], optional
-            The identifier for the VAE to load, by default None.
-            If None, the default TinyVAE ("madebyollin/taesd") is used.
-        device : Literal["cpu", "cuda"], optional
-            The device to use for inference, by default "cuda".
-        dtype : torch.dtype, optional
-            The data type for inference, by default torch.float16.
-        frame_buffer_size : int, optional
-            The size of the frame buffer for denoising batch, by default 1.
-        width : int, optional
-            The width of the image, by default 512.
-        height : int, optional
-            The height of the image, by default 512.
-        warmup : int, optional
-            The number of warmup steps to perform, by default 10.
-        acceleration : Literal["none", "xformers", "tensorrt"], optional
-            The acceleration method, by default "xformers".
-        do_add_noise : bool, optional
-            Whether to add noise during denoising steps, by default True.
-        device_ids : Optional[List[int]], optional
-            List of device IDs to use for DataParallel, by default None.
-        use_lcm_lora : bool, optional
-            Whether to use LCM-LoRA, by default True.
-        use_tiny_vae : bool, optional
-            Whether to use TinyVAE, by default True.
-        enable_similar_image_filter : bool, optional
-            Whether to enable similar image filtering, by default False.
-        similar_image_filter_threshold : float, optional
-            The threshold for the similar image filter, by default 0.98.
-        similar_image_filter_max_skip_frame : int, optional
-            The maximum number of frames to skip for similar image filter, by default 10.
-        use_denoising_batch : bool, optional
-            Whether to use denoising batch, by default True.
-        cfg_type : Literal["none", "full", "self", "initialize"], optional
-            The CFG type for img2img mode, by default "self". 
-        use_cached_attn : bool, optional
-            Whether to cache self-attention maps from previous frames to improve temporal consistency, by default True.
-        use_feature_injection : bool, optional
-            Whether to use feature maps from previous frames to improve temporal consistency, by default True.
-        feature_injection_strength : float, optional
-            The strength of feature injection, by default 0.8.
-        feature_similarity_threshold : float, optional
-            The similarity threshold for feature injection, by default 0.98.
-        cache_interval : int, optional
-            The interval at which to cache attention maps, by default 4.
-        cache_maxframes : int, optional
-            The maximum number of frames to cache attention maps, by default 1.
-        use_tome_cache : bool, optional
-            Whether to use Tome caching, by default True.
-        tome_metric : str, optional
-            The metric to use for Tome, by default "keys".
-        tome_ratio : float, optional
-            The ratio for Tome, by default 0.5.
-        use_grid : bool, optional
-            Whether to use grid, by default False.
-        seed : int, optional
-            The seed for random number generation, by default 2.
-        use_safety_checker : bool, optional
-            Whether to use a safety checker, by default False.
-        engine_dir : Optional[Union[str, Path]], optional
-            The directory for the engine, by default "engines".
-        """
-        # TODO: Test SD turbo
         self.sd_turbo = "turbo" in model_id_or_path
         self.sd_xl = "xl" in model_id_or_path
         
@@ -187,7 +106,6 @@ class StreamV2VWrapper:
 
         self.use_denoising_batch = use_denoising_batch
         self.use_cached_attn = use_cached_attn
-        self.use_ttt_cache = use_ttt_cache
         self.use_feature_injection = use_feature_injection
         self.feature_injection_strength = feature_injection_strength
         self.feature_similarity_threshold = feature_similarity_threshold
@@ -206,11 +124,6 @@ class StreamV2VWrapper:
         self.use_attn_concat = use_attn_concat
 
 
-        if self.use_ttt_cache:
-            self.use_cached_attn = False
-            print("使用TTT缓存注意力")
-        else:
-            print("不使用TTT缓存注意力")
 
         self.stream: StreamV2V = self._load_model(
             model_id_or_path=model_id_or_path,
@@ -220,6 +133,7 @@ class StreamV2VWrapper:
             t_index_list=t_index_list,
             acceleration=acceleration,
             warmup=warmup,
+            cached_attn_style=cached_attn_style,
             do_add_noise=do_add_noise,
             use_lcm_lora=use_lcm_lora,
             use_tiny_vae=use_tiny_vae,
@@ -348,9 +262,9 @@ class StreamV2VWrapper:
             self.stream.update_prompt(prompt)
 
         if isinstance(image, str) or isinstance(image, Image.Image):
-            # 将图像处理为tensor
+
             image = self.preprocess_image(image)
-        # 进行img2img的推理
+
         image_tensor = self.stream(image)
 
         image = self.postprocess_image(image_tensor, output_type=self.output_type)
@@ -420,6 +334,7 @@ class StreamV2VWrapper:
         vae_id: Optional[str] = None,
         acceleration: Literal["none", "xformers", "tensorrt"] = "xformers",
         warmup: int = 10,
+        cached_attn_style: Literal["origin", "confidence", "similarity"] = "similarity",
         do_add_noise: bool = True,
         use_lcm_lora: bool = True,
         use_tiny_vae: bool = True,
@@ -427,54 +342,6 @@ class StreamV2VWrapper:
         seed: int = 2,
         engine_dir: Optional[Union[str, Path]] = "engines",
     ) -> StreamV2V:
-        """
-        Loads the model.
-
-        This method does the following:
-
-        1. Loads the model from the model_id_or_path.
-        2. Loads and fuses the LCM-LoRA model from the lcm_lora_id if needed.
-        3. Loads the VAE model from the vae_id if needed.
-        4. Enables acceleration if needed.
-        5. Prepares the model for inference.
-        6. Load the safety checker if needed.
-
-        Parameters
-        ----------
-        model_id_or_path : str
-            The model id or path to load.
-        t_index_list : List[int]
-            The t_index_list to use for inference.
-        lora_dict : Optional[Dict[str, float]], optional
-            The lora_dict to load, by default None.
-            Keys are the LoRA names and values are the LoRA scales.
-            Example: {'LoRA_1' : 0.5 , 'LoRA_2' : 0.7 ,...}
-        lcm_lora_id : Optional[str], optional
-            The lcm_lora_id to load, by default None.
-        vae_id : Optional[str], optional
-            The vae_id to load, by default None.
-        acceleration : Literal["none", "xfomers", "sfast", "tensorrt"], optional
-            The acceleration method, by default "tensorrt".
-        warmup : int, optional
-            The number of warmup steps to perform, by default 10.
-        do_add_noise : bool, optional
-            Whether to add noise for following denoising steps or not,
-            by default True.
-        use_lcm_lora : bool, optional
-            Whether to use LCM-LoRA or not, by default True.
-        use_tiny_vae : bool, optional
-            Whether to use TinyVAE or not, by default True.
-        cfg_type : Literal["none", "full", "self", "initialize"],
-        optional
-            The cfg_type for img2img mode, by default "self".
-        seed : int, optional
-            The seed, by default 2.
-
-        Returns
-        -------
-        StreamV2V
-            The loaded model.
-        """
 
         # Choose the pipeline based on the flag
         pipeline_cls = StableDiffusionXLPipeline if self.sd_xl else StableDiffusionPipeline
@@ -538,13 +405,13 @@ class StreamV2VWrapper:
                 )
         
         if self.use_random_cache_interval:
-            # 创建一个空列表来存储所有可能的缓存间隔
             cache_interval_list = []
 
         try:
             if acceleration == "xformers":
                 stream.pipe.enable_xformers_memory_efficient_attention()
-                if self.use_cached_attn:
+                # original StreamV2V
+                if self.use_cached_attn and cached_attn_style == "origin":
                     attn_processors = stream.pipe.unet.attn_processors
                     new_attn_processors = {}
                     for key, attn_processor in attn_processors.items():
@@ -567,20 +434,42 @@ class StreamV2VWrapper:
                                                                                  use_grid=self.use_grid,
                                                                                  save_attn_map=self.save_attn_map)
                     stream.pipe.unet.set_attn_processor(new_attn_processors)
-                if self.use_ttt_cache:
-                    # TODO 初始化TTT缓存注意力
-                    print("use_ttt_cache:", self.use_ttt_cache)
+                # SimilarityGate cached attention
+                if self.use_cached_attn and cached_attn_style == "similarity":
+                    # Initialize SimilarityGate cached attention
+                    print("use_cached_attn:", self.use_cached_attn)
+                    print("cached_attn_style:", cached_attn_style)
                     attn_processors = stream.pipe.unet.attn_processors
                     new_attn_processors = {}
                     for key, attn_processor in attn_processors.items():
                         assert isinstance(attn_processor, XFormersAttnProcessor), \
-                              "We only replace 'XFormersAttnProcessor' to 'TTTCachedSTXFormersAttnProcessor'"
-                        new_attn_processors[key] = TTTCachedSTXFormersAttnProcessor_cos(name=key,
+                              "We only replace 'XFormersAttnProcessor' to 'SimilarityGateCachedSTXFormersAttnProcessor'"
+                        new_attn_processors[key] = SimilarityGateCachedSTXFormersAttnProcessor(name=key,
                                                                                  use_feature_injection=self.use_feature_injection,
                                                                                  feature_similarity_threshold=self.feature_similarity_threshold,
                                                                                  interval=self.cache_interval, 
                                                                                  save_attn_map=self.save_attn_map,
                                                                                  reverse_tag=self.reverse_tag,
+                                                                                 vis=self.vis,
+                                                                                 use_concat=self.use_attn_concat,
+                                                                                 ttt_lr=self.ttt_lr,
+                                                                                 )
+                    stream.pipe.unet.set_attn_processor(new_attn_processors)
+                # ConfidenceGate cached attention
+                if self.use_cached_attn and cached_attn_style == "confidence":
+                    # Initialize ConfidenceGate cached attention
+                    print("use_cached_attn:", self.use_cached_attn)
+                    print("cached_attn_style:", cached_attn_style)
+                    attn_processors = stream.pipe.unet.attn_processors
+                    new_attn_processors = {}
+                    for key, attn_processor in attn_processors.items():
+                        assert isinstance(attn_processor, XFormersAttnProcessor), \
+                              "We only replace 'XFormersAttnProcessor' to 'ConfidenceGateCachedSTXFormersAttnProcessor'"
+                        new_attn_processors[key] = ConfidenceGateCachedSTXFormersAttnProcessor(name=key,
+                                                                                 use_feature_injection=self.use_feature_injection,
+                                                                                 feature_similarity_threshold=self.feature_similarity_threshold,
+                                                                                 interval=self.cache_interval, 
+                                                                                 save_attn_map=self.save_attn_map,
                                                                                  vis=self.vis,
                                                                                  use_concat=self.use_attn_concat,
                                                                                  ttt_lr=self.ttt_lr,

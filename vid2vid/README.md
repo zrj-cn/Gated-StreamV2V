@@ -40,23 +40,11 @@ gdown https://drive.google.com/drive/folders/1D7g-dnCQnjjogTPX-B3fttgdrp9nKeKw -
 # Evaluate a single video
 python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "Elon Musk is giving a talk"
 python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "Claymation, a man is giving a talk."
-python main.py --input ./demo_selfie/tennis.mp4 --prompt "Ukiyo-e Art - a man holding a tennis racket on a tennis court" --use_ttt_cache True --cache_interval 1 --use_feature_injection False --save_attn_map True
-python main.py --input ./demo_selfie/tennis.mp4 --prompt "Ukiyo-e Art - a man holding a tennis racket on a tennis court" --cache_interval 1 --use_ttt_cache True --use_feature_injection True --feature_similarity_threshold 0.9
 
-python main.py --input ./demo_selfie/tennis.mp4 --prompt "Ukiyo-e Art - a man holding a tennis racket on a tennis court" --use_ttt_cache False --cache_interval 1 --use_feature_injection False --save_attn_map True --reverse_tag False --ttt_lr 1.0
+python main.py --input ./demo_selfie/tennis.mp4 --prompt "Ukiyo-e Art - a man holding a tennis racket on a tennis court" --use_ttt_cache False --cache_interval 1 --use_feature_injection False --save_attn_map True --reverse_tag False
 
-python main.py --input ./demo_selfie/tennis.mp4 --prompt "Ukiyo-e Art - a man holding a tennis racket on a tennis court" --cache_interval 1 --use_ttt_cache False --use_feature_injection True --save_attn_map True
+python main.py --input ./demo_selfie/tennis.mp4 --prompt "Ukiyo-e Art - a man holding a tennis racket on a tennis court" --cache_interval 1 --use_feature_injection True --cached_attn_style "origin"
 
-python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "Elon Musk is giving a talk" --cache_interval 1 --use_ttt_cache True --use_feature_injection True --reverse_tag True --scale 2.0 --cuda_visible_devices "6"
-
-# vangogh
-python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "lvngvncnt, Van Gogh style, a man is giving a talk." --cache_interval 4 --use_feature_injection True --model_id "/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/Van-Gogh-diffusion"
-
-# 2d
-python main.py --input ./demo_selfie/jeff_1.mp4 --prompt "A flat 2d anime of a man is giving a talk." --cache_interval 4 --use_feature_injection True --model_id "/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/flat-2d-animerge"
-
-# transfer to batman
-python main.py --input ./demo_selfie/tennis.mp4 --prompt "a batman holding a tennis racket on a tennis court" --cache_interval 4 --use_ttt_cache False --use_feature_injection False --save_attn_map False --noise_strength 0.6
 ```
 
 ```bash

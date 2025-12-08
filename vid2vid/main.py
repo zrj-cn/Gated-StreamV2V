@@ -15,39 +15,39 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 def main(
     input: str,
     prompt: str,
+    # TODO -ZRJ- You can choose the cuda_visible_devices.
     cuda_visible_devices: str = "7",
     video_name: str = None,
     output_dir: str = os.path.join(CURRENT_DIR, "tests/vid"),
+    # TODO -ZRJ- If use batch_eval: The model_id in the JSON file needs to be modified.
     model_id: str = "/home/zrj/project/ori_v2v/streamv2v/data/checkpoints/stable-diffusion-1.5",
     scale: float = 1.0,
     guidance_scale: float = 1.0,
     diffusion_steps: int = 4,
     noise_strength: float = 0.4,
     acceleration: Literal["none", "xformers", "tensorrt"] = "xformers",
-    use_denoising_batch: bool = True,
     use_cached_attn: bool = True,
-    use_ttt_cache: bool = False,
+    cached_attn_style: Literal["origin", "confidence", "similarity"] = "similarity",
+    use_denoising_batch: bool = True,
     use_feature_injection: bool = True,
     feature_injection_strength: float = 0.8,
     feature_similarity_threshold: float = 0.98,
-    cache_interval: int = 4,
+    cache_interval: int = 1,
     cache_maxframes: int = 1,
     use_tome_cache: bool = True,
     do_add_noise: bool = True,
     enable_similar_image_filter: bool = False,
-    # TODO 动态调整参数
-    enable_dynamic_motion_adjust: bool = False,
     use_random_cache_interval: bool = False,
     save_attn_map: bool = False,
     seed: int = 2,
-    reverse_tag: bool = False,
+    reverse_tag: bool = True,
     vis: bool = False,
     use_attn_concat: bool = True,
-    ttt_lr: float = 0.5,
+    ttt_lr: float = 1.0,
 ):
     os.environ["CUDA_VISIBLE_DEVICES"] = str(cuda_visible_devices)
-    # 输出cuda可见设备
-    print(f"cuda可见设备CUDA_VISIBLE_DEVICES: {os.environ['CUDA_VISIBLE_DEVICES']}")
+    if vis:
+        print(f"CUDA_VISIBLE_DEVICES: {os.environ['CUDA_VISIBLE_DEVICES']}")
     import torch
     from torchvision.io import read_video, write_video
     from tqdm import tqdm
@@ -55,34 +55,30 @@ def main(
 
     def write_video_opencv(output_path, frames, fps=30):
         """
-        用 OpenCV 写入视频（替代 torchvision 的 write_video）
-        frames: 视频帧列表，形状为 (num_frames, height, width, 3)，数据类型为 np.uint8（0-255）
+        Write video with OpenCV (replacing torchvision's write_video)
+        frames: list of video frames, shape (num_frames, height, width, 3), dtype np.uint8 (0-255)
         """
         if len(frames) == 0:
-            raise ValueError("无视频帧可写入")
+            raise ValueError("No video frames to write")
         
-        # 获取视频帧的高度、宽度（确保是 HWC 格式）
+            # Get video frame height and width (ensure HWC format)
         height, width = frames[0].shape[:2]
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # 编码格式（兼容大多数播放器）
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
         
         for frame in frames:
-            # 处理 torch.Tensor 类型的帧
             if isinstance(frame, torch.Tensor):
-                frame = frame.cpu().numpy()  # 移到 CPU（此时是 HWC 格式，RGB 通道）
-                # 若帧是 [0,1] 浮点数，转 [0,255] 整数（如果已经是 uint8 可以跳过）
+                frame = frame.cpu().numpy()  
                 if frame.dtype in (np.float32, np.float64):
                     frame = (frame * 255).astype(np.uint8)
             
-            # 关键：强制将 RGB 转为 BGR（OpenCV 要求）
-            if frame.shape[-1] == 3:  # 确保是 3 通道彩色图
+            if frame.shape[-1] == 3:  # Ensure it is a 3-channel color image
                 frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             
-            # 写入视频（此时帧是 BGR 顺序，符合 OpenCV 要求）
             out.write(frame)
         
         out.release()
-        print(f"视频已保存到：{output_path}")
+        print(f"Video saved to: {output_path}")
     """
     Perform video-to-video translation with StreamV2V.
 
@@ -113,6 +109,12 @@ def main(
     acceleration: Literal["none", "xformers", "tensorrt"] = "xformers"
         The type of acceleration to use for video translation. 
         By default, it is xformers.
+    cached_attn_style: Literal["origin", "confidence", "similarity"], optional
+        The style of cached attention.
+        origin: Use the original StreamV2V.
+        confidence: Use the alignment confidence to gate the feature bank.
+        similarity: Use the similarity score to gate the feature bank.
+        By default, it is similarity.
     use_denoising_batch: bool, optional
         Whether to use denoising batch or not.
         By default, it is True.
@@ -131,7 +133,7 @@ def main(
         By default, it is 0.98
     cache_interval: int, optional
         The frame interval to update the feature bank.
-        By default, it is 4
+        By default, it is 1
     cache_maxframes: int, optional
         The max frames to cache in the feature bank. Use FIFO (First-In-First-Out) strategy to update. 
         Only effective when use_tome_cache = False, otherwise, cache_maxframes is set to 1.
@@ -141,19 +143,19 @@ def main(
     enable_similar_image_filter: bool, optional
         Whether to enable similar image filter or not,
         By default, it is False.
+    ttt_lr: float, optional
+        Used to scale the beta of the gated attention layer.
+        By default, it is 1.0.
     seed: int, optional
         The seed, by default 2. if -1, use random seed.
     """
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
 
-    if enable_dynamic_motion_adjust == True:
-        use_random_cache_interval = False
-
     if use_random_cache_interval:
-        print("使用随机缓存间隔-Use random cache interval")
+        print("Use random cache interval")
     else:
-        print("不使用随机缓存间隔-Do not use random cache interval")
+        print("Do not use random cache interval")
 
     video_info = read_video(input)
     video = video_info[0] / 255
@@ -161,14 +163,14 @@ def main(
     height = int(video.shape[1] * scale)
     width = int(video.shape[2] * scale)
 
-    # 去噪的初始步数
+    # Initial denoising step
     init_step = int(50 * (1 - noise_strength))
-    # 每个 diffusion_steps 对应的去噪步长
+    # Denoising step interval for each diffusion_steps
     interval = int(50 * noise_strength) // diffusion_steps
-    # 去噪的时间索引列表
+    # List of denoising time indices
     t_index_list = [init_step + i * interval for i in range(diffusion_steps)]
 
-    print(f"bank的更新间隔cache_interval: {cache_interval}")
+    print(f"cache_interval: {cache_interval}")
 
     stream = StreamV2VWrapper(
         model_id_or_path=model_id,
@@ -185,7 +187,7 @@ def main(
         similar_image_filter_threshold=0.98,
         use_denoising_batch=use_denoising_batch,
         use_cached_attn=use_cached_attn,
-        use_ttt_cache=use_ttt_cache,
+        cached_attn_style=cached_attn_style,
         use_feature_injection=use_feature_injection,
         feature_injection_strength=feature_injection_strength,
         feature_similarity_threshold=feature_similarity_threshold,
@@ -251,7 +253,7 @@ def main(
     input_vid = input.split('/')[-1]
     if video_name == None:
         output = os.path.join(output_dir, f"{input_vid.rsplit('.', 1)[0]}_{prompt_txt}.{input_vid.rsplit('.', 1)[1]}")
-    # write_video(output, video_result, fps=fps)
+
     else:
         output = os.path.join(output_dir, f"{video_name}.mp4")
     write_video_opencv(output, [frame.numpy().astype("uint8") for frame in video_result], fps=float(fps))

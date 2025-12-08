@@ -197,14 +197,14 @@ class CachedSTXFormersAttnProcessor:
         self.cached_value = deque(maxlen=max_frames)
         self.cached_output = deque(maxlen=max_frames)
         self.use_tome_cache = use_tome_cache
-        # TODO: 了解tome_metric的作用
+
         self.tome_metric = tome_metric
         self.use_grid = use_grid
-        # 应该是更新时bank的合并比率
+
         self.tome_ratio = tome_ratio
         self.save_attn_map = save_attn_map
 
-    # TODO bank的更新策略
+
     def _tome_step_kvout(self, keys, values, outputs):
         if len(self.cached_value) == 1:
             keys = torch.cat(list(self.cached_key) + [keys], dim=1)
@@ -226,13 +226,13 @@ class CachedSTXFormersAttnProcessor:
         first_outputs = self.cached_output[0]
 
         if self.save_attn_map and self.frame_id % 4 == 0:
-            os.makedirs(f'./saved_states/v2v/self_attn_bank/', exist_ok=True)
+            os.makedirs(f'./saved_states/origin/self_attn_bank/', exist_ok=True)
             feats = {
                         "hidden_states": first_outputs.clone().cpu(),
-                        # "key": first_keys.clone().cpu(),
-                        # "value": first_values.clone().cpu(),
+                        "key": first_keys.clone().cpu(),
+                        "value": first_values.clone().cpu(),
                     }
-            torch.save(feats, f'./saved_states/v2v/self_attn_bank/{self.name}.frame{self.frame_id}.pt')
+            torch.save(feats, f'./saved_states/origin/self_attn_bank/{self.name}.frame{self.frame_id}.pt')
 
     def _tome_step_kv(self, keys, values):
         if len(self.cached_value) == 1:
@@ -292,10 +292,10 @@ class CachedSTXFormersAttnProcessor:
         query = attn.to_q(hidden_states, *args)
 
         is_selfattn = False
-        # 无外部K和V，自注意力
+
         if encoder_hidden_states is None:
             is_selfattn = True
-            # 自注意力时，K和V来自隐藏状态
+
             encoder_hidden_states = hidden_states
         elif attn.norm_cross:
             encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
@@ -303,7 +303,6 @@ class CachedSTXFormersAttnProcessor:
         key = attn.to_k(encoder_hidden_states, *args)
         value = attn.to_v(encoder_hidden_states, *args)
 
-        # 当处理自注意力时，连接K和V
         if is_selfattn:
             cached_key = key.clone()
             cached_value = value.clone()
@@ -314,21 +313,21 @@ class CachedSTXFormersAttnProcessor:
 
             ## Code for storing and visualizing features 
             if self.frame_id % 4 == 0 and self.save_attn_map:
-                os.makedirs(f'./saved_states/v2v/self_attn_feats_SD/', exist_ok=True)
+                os.makedirs(f'./saved_states/origin/self_attn_feats_SD/', exist_ok=True)
                 feats = {
                             "hidden_states": hidden_states.clone().cpu(),
                             # "query": query.clone().cpu(),
                             # "key": cached_key.clone().cpu(),
                             # "value": cached_value.clone().cpu(),
                         }
-                torch.save(feats, f'./saved_states/v2v/self_attn_feats_SD/{self.name}.frame{self.frame_id}.pt')
+                torch.save(feats, f'./saved_states/origin/self_attn_feats_SD/{self.name}.frame{self.frame_id}.pt')
 
 
-        # 当前帧的q
+
         query = attn.head_to_batch_dim(query).contiguous()
-        # 当前帧和bank拼接后的key
+
         key = attn.head_to_batch_dim(key).contiguous()
-        # 当前帧和bank拼接后的value
+
         value = attn.head_to_batch_dim(value).contiguous()
 
         hidden_states = xformers.ops.memory_efficient_attention(
@@ -354,18 +353,17 @@ class CachedSTXFormersAttnProcessor:
         hidden_states = hidden_states / attn.rescale_output_factor
         if is_selfattn:
             cached_output = hidden_states.clone()
-            # TODO Feature Fusion 机制
+            # Feature Fusion 
             if self.use_feature_injection and ("up_blocks.0" in self.name or "up_blocks.1" in self.name or 'mid_block' in self.name):
                 if len(self.cached_output) > 0:
                     nn_hidden_states = get_nn_feats(hidden_states, self.cached_output, threshold=self.threshold)
                     hidden_states = hidden_states * (1-self.fi_strength) + self.fi_strength * nn_hidden_states
-        # 更新bank
+
         if self.frame_id % self.interval == 0:
             if is_selfattn:
                 if self.use_tome_cache:
                     self._tome_step_kvout(cached_key, cached_value, cached_output)
                 else:
-                    # 不使用dyme的情况下，维护队列
                     self.cached_key.append(cached_key)
                     self.cached_value.append(cached_value)
                     self.cached_output.append(cached_output)
