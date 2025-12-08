@@ -20,6 +20,7 @@ vid2vid/saved_states
 *.csv
 *.mp4
 run*.sh
+*run.sh
 *.safetensors
 result_lcm.png
 model.ckpt
@@ -221,3 +222,4 @@ models/RealESR*
 *.safetensors
 
 !vid2vid/source_video/*
+!demo_w_camera/frontend/static/favicon.png
