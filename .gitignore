@@ -14,6 +14,9 @@ engines/
 output/
 tools/warp_error_log
 tools/clip_score_log
+tools/output
+tools/output2
+tools/data_processor
 vid2vid/saved_states
 *.csv
 *.mp4
