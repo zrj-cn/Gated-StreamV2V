@@ -5,7 +5,7 @@
 ### Preparation
 ```bash
 # get the code 
-git clone https://github.com/zrj-cn//Gated-StreamV2V.git
+git clone https://github.com/zrj-cn/Gated-StreamV2V.git
 cd Gated-StreamV2V
 
 # environment
