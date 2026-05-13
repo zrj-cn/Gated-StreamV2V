@@ -3,7 +3,7 @@
 input_json_file_name="eval.json"
 
 output_dir_name="similarity_gate_default"
-
+ 
 cached_attn_style="similarity" # default: similarity
 # cached_attn_style="origin" 
 # cached_attn_style="confidence" 
