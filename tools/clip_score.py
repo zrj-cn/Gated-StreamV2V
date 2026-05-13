@@ -3,7 +3,7 @@ import json
 import os 
 import argparse
 import cv2
-
+ 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cuda_visible_devices', type=str, default='7', help='CUDA visible devices.')
