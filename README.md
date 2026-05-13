@@ -17,7 +17,7 @@ pip install xformers==0.0.23 --index-url https://download.pytorch.org/whl/cu121
 ⚠️ For required LoRA and other components, please refer to [StreamV2V's README.md](./README-old.md).
 ### Modify paths in the code
 Search for strings containing "zrj" in the files and replace them with your own paths. 
-
+ 
 ### Run the code
 ⭐️ Single-video testing
 
