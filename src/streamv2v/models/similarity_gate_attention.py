@@ -15,7 +15,7 @@ from diffusers.models.lora import LoRACompatibleLinear, LoRALinearLayer
 
 from .utils import soft_feature_injection, compute_beta_similarity
 
-
+ 
 if is_xformers_available():
     import xformers
     import xformers.ops
