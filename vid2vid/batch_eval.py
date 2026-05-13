@@ -2,7 +2,7 @@ import os
 import json
 import argparse
 import subprocess
-
+ 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Process a JSON file contains multiple edits.")
     parser.add_argument('--cuda_visible_devices', type=str, default="7", help='CUDA visible devices.')
